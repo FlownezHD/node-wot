@@ -152,7 +152,7 @@ program.action(async function (_, options, cmd) {
     const helpers = new Helpers(servient);
 
     if (args.length > 0) {
-        return runScripts({ runtime, helpers }, args, options.inspect ?? options.inspectBrk);
+        return runScripts({ runtime, helpers, servient }, args, options.inspect ?? options.inspectBrk);
     }
 
     const files = await readdir(baseDir);
@@ -160,7 +160,7 @@ program.action(async function (_, options, cmd) {
 
     info(`node-wot using current directory with %d script${scripts.length > 1 ? "s" : ""}`, scripts.length);
 
-    return runScripts({ runtime, helpers }, scripts, options.inspect ?? options.inspectBrk);
+    return runScripts({ runtime, helpers, servient }, scripts, options.inspect ?? options.inspectBrk);
 });
 
 program.parse(process.argv);

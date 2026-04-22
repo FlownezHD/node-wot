@@ -151,6 +151,22 @@ export default class Servient {
         return this.servers.slice(0);
     }
 
+    public async removeServer(server: ProtocolServer): Promise<boolean> {
+        const serverIndex = this.servers.indexOf(server);
+
+        if (serverIndex === -1) {
+            return false;
+        }
+
+        this.servers.splice(serverIndex, 1);
+
+        if (this.#wotInstance !== undefined) {
+            await server.stop();
+        }
+
+        return true;
+    }
+
     public addClientFactory(clientFactory: ProtocolClientFactory): void {
         debug(`Servient adding client factory for '${clientFactory.scheme}'`);
         this.clientFactories.set(clientFactory.scheme, clientFactory);

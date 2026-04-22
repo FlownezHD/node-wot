@@ -1,0 +1,12 @@
+{
+    "id": "example-binding",
+    "name": "Example Binding",
+    "version": "0.1.0",
+    "description": "Minimal example for a dynamically loadable binding plugin.",
+    "entrypoint": "./index.js",
+    "schemes": ["example"],
+    "capabilities": {
+        "client": true,
+        "server": true
+    }
+}

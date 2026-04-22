@@ -13,12 +13,13 @@
  * SPDX-License-Identifier: EPL-2.0 OR W3C-20150513
  ********************************************************************************/
 
-import { createLoggers, Helpers } from "@node-wot/core";
+import { createLoggers, Helpers, Servient } from "@node-wot/core";
 const { debug } = createLoggers("cli", "executor");
 
 export interface WoTContext {
     runtime: typeof WoT;
     helpers: Helpers;
+    servient: Servient;
 }
 
 export class Executor {
@@ -28,6 +29,7 @@ export class Executor {
         const isTypeScriptScript =
             userScriptPathArg && (userScriptPathArg.endsWith(".ts") || userScriptPathArg.endsWith(".tsx"));
         global.WoT = wotContext.runtime;
+        (global as typeof globalThis & { NodeWoT?: WoTContext }).NodeWoT = wotContext;
 
         if (isTypeScriptScript === true) {
             // eslint-disable-next-line @typescript-eslint/no-require-imports

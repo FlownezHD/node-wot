@@ -5,6 +5,7 @@
         "module": "Node16",
         "rootDir": ".",
         "target": "ES2021",
+        "resolveJsonModule": true,
         "sourceMap": false,
         "removeComments": false
     },
