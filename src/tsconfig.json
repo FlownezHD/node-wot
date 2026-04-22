@@ -1,0 +1,13 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "outDir": "../dist/runtime",
+        "module": "Node16",
+        "rootDir": ".",
+        "target": "ES2021",
+        "sourceMap": false,
+        "removeComments": false
+    },
+    "include": ["./**/*", "../node_modules/wot-typescript-definitions/**/*.d.ts"],
+    "references": []
+}
