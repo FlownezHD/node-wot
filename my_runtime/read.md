@@ -29,6 +29,7 @@ Die Runtime wird als WoT-Script ueber die CLI gestartet. Dabei wird das ganze Re
 docker run -it --init \
   -p 8080:8080/tcp \
   -p 5683:5683/udp \
+  -p 5684:5684/udp \
   -e TS_NODE_PROJECT=/workspace/src/tsconfig.json \
   -e TS_NODE_FILES=true \
   -v "$(pwd):/workspace" \
@@ -105,7 +106,50 @@ curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-## 7. Was aktuell getestet wird
+## 7. CoAP-Binding dynamisch laden
+
+Das CoAP-Plugin liegt aktuell unter:
+
+```text
+src/bindings/coap-binding
+```
+
+Wichtig:
+- das Plugin ist aktuell als Server-only Wrapper umgesetzt
+- der dynamisch geladene CoAP-Server verwendet Port `5684`
+- deshalb sollte beim Docker-Start `-p 5684:5684/udp` gesetzt sein
+
+CoAP-Binding laden:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"coap-binding"}'
+```
+
+Danach pruefen:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+curl http://localhost:8080/runtime/properties/lastOperation
+```
+
+CoAP-Binding wieder entfernen:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"coap-binding"}'
+```
+
+Danach wieder pruefen:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+curl http://localhost:8080/runtime/properties/lastOperation
+```
+
+## 8. Was aktuell getestet wird
 
 Mit dem Example-Binding testest du im Moment vor allem:
 - ob die Runtime das Binding-Verzeichnis findet
@@ -116,7 +160,9 @@ Mit dem Example-Binding testest du im Moment vor allem:
 
 Du testest damit noch nicht vollstaendig ein echtes Protokollbinding, sondern zuerst den Lade- und Integrationsmechanismus der Runtime.
 
-## 8. Typischer Ablauf bei Aenderungen
+Beim CoAP-Binding testest du zusaetzlich, dass ein bestehendes node-wot-Binding als dynamisch ladbarer Wrapper eingebunden werden kann.
+
+## 9. Typischer Ablauf bei Aenderungen
 
 Wenn du nur `src/runtime.ts` oder `src/bindings/example-binding/*` geaendert hast:
 

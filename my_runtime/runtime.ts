@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import path from "path";
 
+//smallest form of an ClientFactory
 type RuntimeClientFactory = {
     readonly scheme: string;
     getClient(): unknown;
@@ -8,6 +9,7 @@ type RuntimeClientFactory = {
     destroy(): boolean;
 };
 
+//smallest form of a Server
 type RuntimeServer = {
     readonly scheme: string;
     expose(thing: unknown, tdTemplate?: unknown): Promise<void>;
@@ -17,6 +19,7 @@ type RuntimeServer = {
     getPort(): number;
 };
 
+//Servient methods used by the runtime
 type RuntimeServient = {
     addClientFactory(clientFactory: RuntimeClientFactory): void;
     removeClientFactory(scheme: string): boolean;
@@ -25,12 +28,14 @@ type RuntimeServient = {
     removeServer(server: RuntimeServer): Promise<boolean>;
 };
 
+//type description of the binding
 type RuntimeBinding = {
     id: string;
     protocol?: string;
     package?: string;
 };
 
+//Runtime Mainfest
 type RuntimeBindingManifest = {
     id: string;
     name?: string;
@@ -44,6 +49,7 @@ type RuntimeBindingManifest = {
     };
 };
 
+//Output after createBinding()
 type DynamicBinding = {
     id: string;
     schemes?: string[];
@@ -51,6 +57,7 @@ type DynamicBinding = {
     createServer?: () => RuntimeServer;
 };
 
+//?
 type BindingModule = {
     createBinding?: () => DynamicBinding;
     default?: {
@@ -58,6 +65,7 @@ type BindingModule = {
     };
 };
 
+//which bindings are already loaded ?
 type LoadedBinding = {
     binding: RuntimeBinding;
     clientSchemes: string[];
@@ -71,6 +79,7 @@ let lastOperation = "Runtime initialized";
 let registeredBindings: RuntimeBinding[] = [];
 const loadedBindings = new Map<string, LoadedBinding>();
 
+//return the running Servient from WoT
 function getServient(): RuntimeServient {
     const context = (globalThis as {
         NodeWoT?: {
@@ -85,6 +94,7 @@ function getServient(): RuntimeServient {
     return context.servient;
 }
 
+//search for the binding path
 function resolveBindingBasePath(bindingId: string): string {
     const candidates = [
         path.resolve(__dirname, "bindings", bindingId),
@@ -101,6 +111,7 @@ function resolveBindingBasePath(bindingId: string): string {
     return bindingBasePath;
 }
 
+//Binding loading function
 function loadBinding(bindingId: string): {
     manifest: RuntimeBindingManifest;
     binding: DynamicBinding;
@@ -152,6 +163,7 @@ function loadBinding(bindingId: string): {
     return { manifest, binding, manifestPath, entrypointPath };
 }
 
+//clear the module cache so the bindin is new if we reload it
 function clearModuleCache(modulePath: string): void {
     try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -161,6 +173,7 @@ function clearModuleCache(modulePath: string): void {
     }
 }
 
+//Check if the provided RuntimeClientFactory is valid
 function isRuntimeClientFactory(value: unknown): value is RuntimeClientFactory {
     if (value == null || typeof value !== "object") {
         return false;
@@ -175,6 +188,7 @@ function isRuntimeClientFactory(value: unknown): value is RuntimeClientFactory {
     );
 }
 
+//Check if the provided RuntimeServer is valid
 function isRuntimeServer(value: unknown): value is RuntimeServer {
     if (value == null || typeof value !== "object") {
         return false;
@@ -191,6 +205,9 @@ function isRuntimeServer(value: unknown): value is RuntimeServer {
     );
 }
 
+/*
+Main Function which loads the provided bindings, validates them and registers them at the Servient
+*/
 async function registerBinding(input: RuntimeBinding, servient: RuntimeServient): Promise<LoadedBinding> {
     const { manifest, binding, manifestPath, entrypointPath } = loadBinding(input.id);
     const clientSchemes: string[] = [];

@@ -1,0 +1,12 @@
+{
+    "id": "coap-binding",
+    "name": "Dynamic CoAP Binding",
+    "version": "0.1.0",
+    "description": "Wrapper around the existing node-wot CoAP server binding for dynamic loading.",
+    "entrypoint": "./index.js",
+    "schemes": ["coap"],
+    "capabilities": {
+        "client": false,
+        "server": true
+    }
+}
