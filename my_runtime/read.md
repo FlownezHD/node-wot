@@ -222,6 +222,30 @@ Registrierte Bindings ueber den einfachen Server abrufen:
 curl http://localhost:8091/runtime/properties/registeredBindings
 ```
 
+### Simple-Client direkt testen
+
+Die folgende Testdatei verwendet wirklich den `SimpleClient` aus dem Binding und spricht die Runtime ueber `simple://...` an:
+
+```bash
+node my_runtime/simple-client-test.js
+```
+
+Einzelne Tests:
+
+```bash
+node my_runtime/simple-client-test.js td
+node my_runtime/simple-client-test.js read status
+node my_runtime/simple-client-test.js read registeredBindings
+node my_runtime/simple-client-test.js action addBinding '{"id":"example-binding"}'
+node my_runtime/simple-client-test.js action removeBinding '{"id":"example-binding"}'
+```
+
+Optional kannst du Host, Port und Thing-Pfad anpassen:
+
+```bash
+SIMPLE_HOST=localhost SIMPLE_PORT=8091 SIMPLE_THING=runtime node my_runtime/simple-client-test.js read status
+```
+
 Simple-Binding wieder entfernen:
 
 ```bash
