@@ -28,6 +28,7 @@ Die Runtime wird als WoT-Script ueber die CLI gestartet. Dabei wird das ganze Re
 ```bash
 docker run -it --init \
   -p 8080:8080/tcp \
+  -p 8091:8091/tcp \
   -p 5683:5683/udp \
   -p 5684:5684/udp \
   -e TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json \
@@ -173,7 +174,72 @@ node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:56
 
 Wenn das CoAP-Binding wieder entfernt wurde, sollten diese Anfragen nicht mehr erfolgreich beantwortet werden.
 
-## 8. Was aktuell getestet wird
+## 8. Simple-Binding dynamisch laden
+
+Das Simple-Binding liegt aktuell unter:
+
+```text
+my_runtime/bindings/simple-binding
+```
+
+Wichtig:
+- das Plugin stellt einen eigenen Client und einen eigenen Server bereit
+- der Server verwendet Port `8091`
+- deshalb sollte beim Docker-Start `-p 8091:8091/tcp` gesetzt sein
+
+Simple-Binding laden:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+Danach pruefen:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+curl http://localhost:8080/runtime/properties/lastOperation
+```
+
+### Simple-Server direkt testen
+
+Thing Description der Runtime ueber den einfachen Server abrufen:
+
+```bash
+curl http://localhost:8091/runtime
+```
+
+Status-Property ueber den einfachen Server abrufen:
+
+```bash
+curl http://localhost:8091/runtime/properties/status
+```
+
+Registrierte Bindings ueber den einfachen Server abrufen:
+
+```bash
+curl http://localhost:8091/runtime/properties/registeredBindings
+```
+
+Simple-Binding wieder entfernen:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+Danach wieder pruefen:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+curl http://localhost:8080/runtime/properties/lastOperation
+```
+
+Wenn das Simple-Binding entfernt wurde, sollten Anfragen an `http://localhost:8091/...` nicht mehr erfolgreich beantwortet werden.
+
+## 9. Was aktuell getestet wird
 
 Mit dem Example-Binding testest du im Moment vor allem:
 - ob die Runtime das Binding-Verzeichnis findet
@@ -186,7 +252,9 @@ Du testest damit noch nicht vollstaendig ein echtes Protokollbinding, sondern zu
 
 Beim CoAP-Binding testest du zusaetzlich, dass ein bestehendes node-wot-Binding als dynamisch ladbarer Wrapper eingebunden werden kann.
 
-## 9. Typischer Ablauf bei Aenderungen
+Beim Simple-Binding testest du zusaetzlich, dass ein vollstaendig eigenes Binding mit eigenem Client und eigenem Server den von der Runtime erwarteten Vertrag erfuellen und dynamisch geladen werden kann.
+
+## 10. Typischer Ablauf bei Aenderungen
 
 Wenn du nur `my_runtime/runtime.ts` oder `my_runtime/bindings/example-binding/*` geaendert hast:
 
