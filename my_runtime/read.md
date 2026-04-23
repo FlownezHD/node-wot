@@ -19,26 +19,26 @@ npm run build:docker
 ```
 
 Hinweis:
-- Aenderungen an `src/runtime.ts` oder `src/bindings/*` brauchen normalerweise kein neues Image, weil diese spaeter per Volume in den Container gemountet werden.
+- Aenderungen an `my_runtime/runtime.ts` oder `my_runtime/bindings/*` brauchen normalerweise kein neues Image, weil diese spaeter per Volume in den Container gemountet werden.
 
 ## 3. Runtime im Container starten
 
-Die Runtime wird als WoT-Script ueber die CLI gestartet. Dabei wird das ganze Repo nach `/workspace` gemountet, damit `src/runtime.ts` und die lokalen Bindings verfuegbar sind.
+Die Runtime wird als WoT-Script ueber die CLI gestartet. Dabei wird das ganze Repo nach `/workspace` gemountet, damit `my_runtime/runtime.ts` und die lokalen Bindings verfuegbar sind.
 
 ```bash
 docker run -it --init \
   -p 8080:8080/tcp \
   -p 5683:5683/udp \
   -p 5684:5684/udp \
-  -e TS_NODE_PROJECT=/workspace/src/tsconfig.json \
+  -e TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json \
   -e TS_NODE_FILES=true \
   -v "$(pwd):/workspace" \
   --rm \
-  node-wot /workspace/src/runtime.ts
+  node-wot /workspace/my_runtime/runtime.ts
 ```
 
 Die wichtigen Punkte dabei sind:
-- `TS_NODE_PROJECT=/workspace/src/tsconfig.json`: nutzt den TS-Kontext fuer `src/runtime.ts`
+- `TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json`: nutzt den TS-Kontext fuer `my_runtime/runtime.ts`
 - `TS_NODE_FILES=true`: laedt die benoetigten globalen WoT-Typen
 - `-v "$(pwd):/workspace"`: mountet dein lokales Repo in den Container
 
@@ -73,7 +73,7 @@ curl http://localhost:8080/runtime/properties/registeredBindings
 Das Example-Binding liegt aktuell unter:
 
 ```text
-src/bindings/example-binding
+my_runtime/bindings/example-binding
 ```
 
 Zum Laden des Bindings:
@@ -111,7 +111,7 @@ curl http://localhost:8080/runtime/properties/lastOperation
 Das CoAP-Plugin liegt aktuell unter:
 
 ```text
-src/bindings/coap-binding
+my_runtime/bindings/coap-binding
 ```
 
 Wichtig:
@@ -149,6 +149,30 @@ curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
+### CoAP-Server direkt testen
+
+Da das CoAP-Binding aktuell als server-only Plugin umgesetzt ist, kannst du danach direkt eine echte CoAP-Anfrage an den dynamisch geladenen Server schicken.
+
+Wichtig:
+- der Test wird aus `packages/binding-coap` heraus ausgefuehrt, damit `require("coap")` aufgeloest werden kann
+- der dynamisch geladene CoAP-Server lauscht auf `127.0.0.1:5684`
+
+Status-Property ueber CoAP abrufen:
+
+```bash
+cd packages/binding-coap
+node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:5684/runtime/properties/status'); req.on('response',res=>{let out=''; res.on('data',c=>out+=c); res.on('end',()=>console.log('STATUS:', out));}); req.on('error',err=>console.error('ERROR:', err.message)); req.end();"
+```
+
+Thing Description der Runtime ueber CoAP abrufen:
+
+```bash
+cd packages/binding-coap
+node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:5684/runtime'); req.setOption('Accept','application/td+json'); req.on('response',res=>{let out=''; res.on('data',c=>out+=c); res.on('end',()=>console.log(out));}); req.on('error',err=>console.error('ERROR:', err.message)); req.end();"
+```
+
+Wenn das CoAP-Binding wieder entfernt wurde, sollten diese Anfragen nicht mehr erfolgreich beantwortet werden.
+
 ## 8. Was aktuell getestet wird
 
 Mit dem Example-Binding testest du im Moment vor allem:
@@ -164,7 +188,7 @@ Beim CoAP-Binding testest du zusaetzlich, dass ein bestehendes node-wot-Binding 
 
 ## 9. Typischer Ablauf bei Aenderungen
 
-Wenn du nur `src/runtime.ts` oder `src/bindings/example-binding/*` geaendert hast:
+Wenn du nur `my_runtime/runtime.ts` oder `my_runtime/bindings/example-binding/*` geaendert hast:
 
 1. laufenden Container stoppen
 2. Container mit dem `docker run ...`-Befehl oben neu starten

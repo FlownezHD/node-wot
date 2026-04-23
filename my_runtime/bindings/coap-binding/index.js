@@ -24,6 +24,7 @@ function loadCoapBindingModule() {
 }
 
 function createBinding() {
+    //Lädt das gefundene x.js modul und läd den CoapServer daraus
     const { CoapServer } = loadCoapBindingModule();
 
     return {

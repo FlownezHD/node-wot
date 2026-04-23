@@ -1,7 +1,7 @@
 {
     "extends": "../tsconfig.json",
     "compilerOptions": {
-        "outDir": "../dist/runtime",
+        "outDir": "../dist/my_runtime",
         "module": "Node16",
         "rootDir": ".",
         "target": "ES2021",

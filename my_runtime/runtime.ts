@@ -98,14 +98,14 @@ function getServient(): RuntimeServient {
 function resolveBindingBasePath(bindingId: string): string {
     const candidates = [
         path.resolve(__dirname, "bindings", bindingId),
-        path.resolve(process.cwd(), "src", "bindings", bindingId),
-        path.resolve(process.cwd(), "dist", "runtime", "bindings", bindingId),
+        path.resolve(process.cwd(), "my_runtime", "bindings", bindingId),
+        path.resolve(process.cwd(), "dist", "my_runtime", "bindings", bindingId),
     ];
 
     const bindingBasePath = candidates.find((candidate) => existsSync(candidate));
 
     if (bindingBasePath == null) {
-        throw new Error(`Binding '${bindingId}' was not found under src/bindings or dist/runtime/bindings.`);
+        throw new Error(`Binding '${bindingId}' was not found under my_runtime/bindings or dist/my_runtime/bindings.`);
     }
 
     return bindingBasePath;
