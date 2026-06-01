@@ -263,7 +263,45 @@ curl http://localhost:8080/runtime/properties/lastOperation
 
 Wenn das Simple-Binding entfernt wurde, sollten Anfragen an `http://localhost:8091/...` nicht mehr erfolgreich beantwortet werden.
 
-## 9. Was aktuell getestet wird
+## 9. Runtime Capabilities und Compatibility Check testen
+
+Runtime-Capabilities abrufen:
+
+```bash
+curl http://localhost:8080/runtime/properties/runtimeCapabilities
+```
+
+Simple-Binding pruefen, ohne es zu laden:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+Simple-Binding nach erfolgreichem Check laden:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+Danach die erweiterten Binding-Details pruefen:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+```
+
+Negativer Test: Wenn `simple-binding` bereits geladen ist, sollte ein erneuter Compatibility Check fuer dasselbe Binding Konflikte melden, z.B. das bereits registrierte Scheme `simple` und den belegten Port `8091`:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+## 10. Was aktuell getestet wird
 
 Mit dem Example-Binding testest du im Moment vor allem:
 - ob die Runtime das Binding-Verzeichnis findet
@@ -278,7 +316,7 @@ Beim CoAP-Binding testest du zusaetzlich, dass ein bestehendes node-wot-Binding 
 
 Beim Simple-Binding testest du zusaetzlich, dass ein vollstaendig eigenes Binding mit eigenem Client und eigenem Server den von der Runtime erwarteten Vertrag erfuellen und dynamisch geladen werden kann.
 
-## 10. Typischer Ablauf bei Aenderungen
+## 11. Typischer Ablauf bei Aenderungen
 
 Wenn du nur `my_runtime/runtime.ts` oder `my_runtime/bindings/example-binding/*` geaendert hast:
 

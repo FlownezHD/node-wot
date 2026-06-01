@@ -1,12 +1,19 @@
 {
     "id": "example-binding",
     "name": "Example Binding",
-    "version": "0.1.0",
-    "description": "Minimal example for a dynamically loadable binding plugin.",
+    "version": "1.0.0",
+    "description": "Minimal mock binding for testing the dynamic binding lifecycle.",
     "entrypoint": "./index.js",
-    "schemes": ["example"],
-    "capabilities": {
-        "client": true,
-        "server": true
+    "provides": {
+        "schemes": ["example"],
+        "roles": ["client", "server"],
+        "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction", "subscribeEvent"]
+    },
+    "requires": {
+        "downwardInterfaces": []
+    },
+    "limitations": {
+        "networkCommunication": false,
+        "mockImplementation": true
     }
 }

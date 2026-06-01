@@ -1,12 +1,33 @@
 {
     "id": "coap-binding",
-    "name": "Dynamic CoAP Binding",
-    "version": "0.1.0",
-    "description": "Wrapper around the existing node-wot CoAP server binding for dynamic loading.",
+    "name": "CoAP Binding",
+    "version": "1.0.0",
+    "description": "Dynamically loaded CoAP server binding based on the available Node-WoT CoAP stack.",
     "entrypoint": "./index.js",
-    "schemes": ["coap"],
-    "capabilities": {
-        "client": false,
-        "server": true
+    "provides": {
+        "schemes": ["coap"],
+        "roles": ["server"],
+        "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
+    },
+    "requires": {
+        "downwardInterfaces": [
+            {
+                "type": "protocol-stack",
+                "protocol": "coap",
+                "transport": "udp",
+                "direction": "server",
+                "interfaceProfile": "library-backed",
+                "resources": {
+                    "preferredPort": 5684,
+                    "requiredPort": true,
+                    "exclusive": true
+                }
+            }
+        ]
+    },
+    "limitations": {
+        "client": true,
+        "observeProperty": false,
+        "subscribeEvent": false
     }
 }

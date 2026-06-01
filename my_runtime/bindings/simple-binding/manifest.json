@@ -1,12 +1,37 @@
 {
     "id": "simple-binding",
     "name": "Simple Binding",
-    "version": "0.1.0",
-    "description": "A minimal custom binding with its own client and server implementation.",
+    "version": "1.0.0",
+    "description": "A simple custom protocol binding for testing dynamic binding loading.",
     "entrypoint": "./index.js",
-    "schemes": ["simple"],
-    "capabilities": {
-        "client": true,
-        "server": true
+    "provides": {
+        "schemes": ["simple"],
+        "roles": ["client", "server"],
+        "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
+    },
+    "requires": {
+        "downwardInterfaces": [
+            {
+                "type": "request-response-endpoint",
+                "transport": "tcp",
+                "direction": "server",
+                "interfaceProfile": "nodejs-native",
+                "resources": {
+                    "preferredPort": 8091,
+                    "requiredPort": true,
+                    "exclusive": true
+                }
+            },
+            {
+                "type": "request-response-endpoint",
+                "transport": "tcp",
+                "direction": "client",
+                "interfaceProfile": "nodejs-native"
+            }
+        ]
+    },
+    "limitations": {
+        "observeProperty": false,
+        "subscribeEvent": false
     }
 }
