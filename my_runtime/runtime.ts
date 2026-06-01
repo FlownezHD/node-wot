@@ -96,7 +96,6 @@ type RuntimeBindingManifest = {
     entrypoint: string;
     provides: BindingProvides;
     requires: BindingRequires;
-    limitations?: Record<string, unknown>;
     // Legacy fields are kept for compatibility while old manifests are migrated.
     schemes?: string[];
     capabilities?: {

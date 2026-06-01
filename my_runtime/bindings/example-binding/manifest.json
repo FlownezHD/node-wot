@@ -11,9 +11,5 @@
     },
     "requires": {
         "downwardInterfaces": []
-    },
-    "limitations": {
-        "networkCommunication": false,
-        "mockImplementation": true
     }
 }

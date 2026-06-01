@@ -24,10 +24,5 @@
                 }
             }
         ]
-    },
-    "limitations": {
-        "client": true,
-        "observeProperty": false,
-        "subscribeEvent": false
     }
 }

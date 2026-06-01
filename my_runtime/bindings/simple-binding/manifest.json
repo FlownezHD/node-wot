@@ -29,9 +29,5 @@
                 "interfaceProfile": "nodejs-native"
             }
         ]
-    },
-    "limitations": {
-        "observeProperty": false,
-        "subscribeEvent": false
     }
 }
