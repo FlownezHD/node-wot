@@ -9,6 +9,8 @@ COAP_PORT="${COAP_PORT:-5684}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MISSING_BINDING_DIR="$ROOT_DIR/my_runtime/bindings/missing-interface-binding"
 
+cd "$ROOT_DIR"
+
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
@@ -86,6 +88,16 @@ require_command() {
     fi
 
     fail "Command available: $command_name" "Install '$command_name' before running this test script."
+    return 1
+}
+
+require_coap_package() {
+    if (cd "$ROOT_DIR/packages/binding-coap" && node -e 'require.resolve("coap")' >/dev/null 2>&1); then
+        pass "Node package available: coap"
+        return 0
+    fi
+
+    fail "Node package available: coap" "Run 'npm install' in the repository root before executing the CoAP tests."
     return 1
 }
 
@@ -237,6 +249,7 @@ req.end();
 section "Preflight"
 require_command curl
 require_command node
+require_coap_package
 
 if [[ "$FAIL_COUNT" -gt 0 ]]; then
     printf "\nPreflight failed. Aborting.\n"
@@ -244,8 +257,15 @@ if [[ "$FAIL_COUNT" -gt 0 ]]; then
 fi
 
 section "Runtime Reachability"
+RUNTIME_REACHABILITY_FAILED="$FAIL_COUNT"
 if run_capture "Runtime TD reachable" http_get "/runtime"; then
     json_assert "Runtime TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
+fi
+
+if [[ "$FAIL_COUNT" -gt "$RUNTIME_REACHABILITY_FAILED" ]]; then
+    printf "\nRuntime is not reachable or does not expose the expected TD at %s/runtime.\n" "$BASE_URL"
+    printf "Start the runtime first with the docker command documented in my_runtime/read.md, then run this script again.\n"
+    exit 1
 fi
 
 section "Initial Cleanup"

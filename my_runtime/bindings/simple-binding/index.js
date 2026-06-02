@@ -8,6 +8,7 @@ const { Readable } = require("stream");
 function loadCoreModule() {
     const candidates = [
         path.join("/app", "packages", "core", "dist", "core.js"),
+        path.resolve(__dirname, "..", "..", "..", "packages", "core", "dist", "core.js"),
         path.resolve(process.cwd(), "packages", "core", "dist", "core.js")
     ];
 
