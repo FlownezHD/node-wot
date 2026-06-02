@@ -1,6 +1,6 @@
 # Runtime Prototype Documentation
 
-Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node-wot Repository. Der Prototyp befindet sich unter `my_runtime` und stellt eine WoT-basierte Management Runtime bereit, ueber die Protocol Bindings zur Laufzeit geladen, geprueft und wieder entfernt werden koennen.
+Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node-wot Repository. Der Prototyp befindet sich unter `my_runtime` und stellt eine WoT-basierte Management Runtime bereit, über die Protocol Bindings zur Laufzeit geladen, geprüft und wieder entfernt werden können.
 
 ## Inhaltsverzeichnis
 
@@ -20,11 +20,11 @@ Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node
   - [10.1 Bereits geladenes Binding](#101-bereits-geladenes-binding)
   - [10.2 Fehlendes Runtime-Interface](#102-fehlendes-runtime-interface)
   - [10.3 Fehlerhafte Binding-Implementierung](#103-fehlerhafte-binding-implementierung)
-- [11. Automatisierte Testausfuehrung](#11-automatisierte-testausfuehrung)
+- [11. Automatisierte Testausführung](#11-automatisierte-testausführung)
 
 ## 1. Voraussetzungen
 
-Die Projektabhaengigkeiten muessen im Repository-Root installiert sein:
+Die Projektabhängigkeiten müssen im Repository-Root installiert sein:
 
 ```bash
 npm install
@@ -32,17 +32,17 @@ npm install
 
 ## 2. Docker-Image
 
-Das Docker-Image enthaelt die `node-wot`-CLI. Nach Aenderungen an `packages/cli/*`, `packages/core/*` oder am `Dockerfile` ist ein Neubau des Images erforderlich:
+Das Docker-Image enthält die `node-wot`-CLI. Nach Änderungen an `packages/cli/*`, `packages/core/*` oder am `Dockerfile` ist ein Neubau des Images erforderlich:
 
 ```bash
 npm run build:docker
 ```
 
-Aenderungen unter `my_runtime/runtime.ts` oder `my_runtime/bindings/*` erfordern in der Regel keinen neuen Image-Build, da diese Dateien beim Start per Volume in den Container gemountet werden.
+Änderungen unter `my_runtime/runtime.ts` oder `my_runtime/bindings/*` erfordern in der Regel keinen neuen Image-Build, da diese Dateien beim Start per Volume in den Container gemountet werden.
 
 ## 3. Runtime-Start
 
-Die Runtime wird als WoT-Script ueber die node-wot CLI gestartet. Das Repository wird im Container nach `/workspace` gemountet, damit `my_runtime/runtime.ts` und die lokalen Bindings verfuegbar sind.
+Die Runtime wird als WoT-Script über die node-wot CLI gestartet. Das Repository wird im Container nach `/workspace` gemountet, damit `my_runtime/runtime.ts` und die lokalen Bindings verfügbar sind.
 
 ```bash
 docker run -it --init \
@@ -59,8 +59,8 @@ docker run -it --init \
 
 Relevante Startparameter:
 
-- `TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json`: TypeScript-Konfiguration fuer `my_runtime/runtime.ts`
-- `TS_NODE_FILES=true`: Laden der benoetigten globalen WoT-Typdefinitionen
+- `TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json`: TypeScript-Konfiguration für `my_runtime/runtime.ts`
+- `TS_NODE_FILES=true`: Laden der benötigten globalen WoT-Typdefinitionen
 - `-v "$(pwd):/workspace"`: Mount des lokalen Repositorys in den Container
 - `-p 8080:8080/tcp`: HTTP-Zugriff auf die Management Runtime
 - `-p 8091:8091/tcp`: Zugriff auf den Simple-Binding-Server
@@ -139,11 +139,11 @@ Die Bindings unter `my_runtime/bindings/<binding-id>` besitzen jeweils eine `man
 }
 ```
 
-Die Runtime prueft vor dem Laden eines Bindings, ob dessen `requires.interfaces` und `requires.resources` mit den deklarierten `runtimeCapabilities` und dem aktuellen Runtime-Zustand vereinbar sind.
+Die Runtime prüft vor dem Laden eines Bindings, ob dessen `requires.interfaces` und `requires.resources` mit den deklarierten `runtimeCapabilities` und dem aktuellen Runtime-Zustand vereinbar sind.
 
 ## 6. Compatibility Check
 
-Ein Binding kann vor dem Laden auf Kompatibilitaet geprueft werden. Die Action liest und validiert das Manifest, fuehrt aber keinen Entry-Point-Code des Bindings aus.
+Ein Binding kann vor dem Laden auf Kompatibilität geprüft werden. Die Action liest und validiert das Manifest, führt aber keinen Entry-Point-Code des Bindings aus.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -162,7 +162,7 @@ Ein kompatibles Binding liefert eine Antwort in dieser Form:
 }
 ```
 
-Bei fehlenden Runtime-Interfaces oder Ressourcenkonflikten enthaelt die Antwort entsprechende Eintraege in `missingRequirements` oder `conflicts`.
+Bei fehlenden Runtime-Interfaces oder Ressourcenkonflikten enthält die Antwort entsprechende Einträge in `missingRequirements` oder `conflicts`.
 
 ## 7. Example-Binding
 
@@ -210,7 +210,7 @@ Das CoAP-Binding befindet sich unter:
 my_runtime/bindings/coap-binding
 ```
 
-Das Binding ist als serverseitiger Wrapper fuer einen verfuegbaren CoAP-Protokollstack umgesetzt. Der dynamisch geladene CoAP-Server verwendet Port `5684/udp`.
+Das Binding ist als serverseitiger Wrapper für einen verfügbaren CoAP-Protokollstack umgesetzt. Der dynamisch geladene CoAP-Server verwendet Port `5684/udp`.
 
 Laden:
 
@@ -244,16 +244,16 @@ curl http://localhost:8080/runtime/properties/lastOperation
 
 ### 8.1 CoAP-Zugriff
 
-Die folgenden Befehle werden aus `packages/binding-coap` ausgefuehrt, damit das Paket `coap` aufgeloest werden kann. Der dynamisch geladene CoAP-Server lauscht auf `127.0.0.1:5684`.
+Die folgenden Befehle werden aus `packages/binding-coap` ausgeführt, damit das Paket `coap` aufgelöst werden kann. Der dynamisch geladene CoAP-Server lauscht auf `127.0.0.1:5684`.
 
-Status-Property ueber CoAP:
+Status-Property über CoAP:
 
 ```bash
 cd packages/binding-coap
 node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:5684/runtime/properties/status'); req.on('response',res=>{let out=''; res.on('data',c=>out+=c); res.on('end',()=>console.log('STATUS:', out));}); req.on('error',err=>console.error('ERROR:', err.message)); req.end();"
 ```
 
-Thing Description ueber CoAP:
+Thing Description über CoAP:
 
 ```bash
 cd packages/binding-coap
@@ -289,19 +289,19 @@ curl http://localhost:8080/runtime/properties/lastOperation
 
 ### 9.1 Simple-Server-Zugriff
 
-Thing Description ueber den Simple-Server:
+Thing Description über den Simple-Server:
 
 ```bash
 curl http://localhost:8091/runtime
 ```
 
-Status-Property ueber den Simple-Server:
+Status-Property über den Simple-Server:
 
 ```bash
 curl http://localhost:8091/runtime/properties/status
 ```
 
-Registrierte Bindings ueber den Simple-Server:
+Registrierte Bindings über den Simple-Server:
 
 ```bash
 curl http://localhost:8091/runtime/properties/registeredBindings
@@ -309,7 +309,7 @@ curl http://localhost:8091/runtime/properties/registeredBindings
 
 ### 9.2 Simple-Client-Test
 
-Die Datei `my_runtime/simple-client-test.js` verwendet den `SimpleClient` des Bindings und kommuniziert mit der Runtime ueber `simple://...`.
+Die Datei `my_runtime/simple-client-test.js` verwendet den `SimpleClient` des Bindings und kommuniziert mit der Runtime über `simple://...`.
 
 Standardlauf:
 
@@ -354,7 +354,7 @@ Nach Entfernen des Simple-Bindings sollten Anfragen an `http://localhost:8091/..
 
 ### 10.1 Bereits geladenes Binding
 
-Wenn `simple-binding` bereits geladen ist, meldet ein erneuter Compatibility Check fuer dasselbe Binding Konflikte, z.B. das registrierte Scheme `simple` und den belegten Port `8091`.
+Wenn `simple-binding` bereits geladen ist, meldet ein erneuter Compatibility Check für dasselbe Binding Konflikte, z.B. das registrierte Scheme `simple` und den belegten Port `8091`.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -364,7 +364,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
 
 ### 10.2 Fehlendes Runtime-Interface
 
-Ein Binding-Manifest mit einem nicht verfuegbaren Interface fuehrt zu einem fehlenden Requirement. Beispiel:
+Ein Binding-Manifest mit einem nicht verfügbaren Interface führt zu einem fehlenden Requirement. Beispiel:
 
 ```json
 {
@@ -402,7 +402,7 @@ Das Binding `wrong-binding` ist ein absichtlich fehlerhaftes Negativbeispiel unt
 my_runtime/bindings/wrong-binding
 ```
 
-Das Manifest ist formal gueltig und beschreibt kompatible Requirements. Der Entry Point liefert jedoch eine ungueltige ClientFactory ohne `getClient()`-Methode. Dadurch sollte der Compatibility Check erfolgreich sein, waehrend das tatsaechliche Laden ueber `addBinding` fehlschlaegt.
+Das Manifest ist formal gültig und beschreibt kompatible Requirements. Der Entry Point liefert jedoch eine ungültige ClientFactory ohne `getClient()`-Methode. Dadurch sollte der Compatibility Check erfolgreich sein, während das tatsächliche Laden über `addBinding` fehlschlägt.
 
 Compatibility Check:
 
@@ -426,22 +426,10 @@ Erwartete Fehlermeldung:
 Binding 'wrong-binding' returned an invalid client factory.
 ```
 
-## 11. Automatisierte Testausfuehrung
+## 11. Automatisierte Testausführung
 
-Das Skript `my_runtime/run-runtime-tests.sh` fuehrt die dokumentierten Runtime-, Binding- und Negativtests automatisiert aus. Eine laufende Runtime unter `http://localhost:8080` wird vorausgesetzt.
-
-```bash
-./my_runtime/run-runtime-tests.sh
-```
-
-Das Skript gibt jeden Testschritt mit Statussymbol aus und beendet sich mit einem Fehlercode, wenn mindestens ein Test fehlschlaegt.
-
-Alternative Endpunkte koennen ueber Umgebungsvariablen gesetzt werden:
+Das Skript `my_runtime/run-runtime-tests.sh` führt die dokumentierten Runtime-, Binding- und Negativtests automatisiert aus. Eine laufende Runtime unter `http://localhost:8080` wird vorausgesetzt.
 
 ```bash
-BASE_URL=http://localhost:8080 \
-SIMPLE_BASE_URL=http://localhost:8091 \
-COAP_HOST=127.0.0.1 \
-COAP_PORT=5684 \
 ./my_runtime/run-runtime-tests.sh
 ```
