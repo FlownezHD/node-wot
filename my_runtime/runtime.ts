@@ -31,12 +31,12 @@ type RuntimeServient = {
 //type description of the binding
 type RuntimeBinding = {
     id: string;
-    protocol?: string;
-    package?: string;
-    schemes?: string[];
-    roles?: BindingRole[];
-    interactions?: WoTInteraction[];
-    downwardRequirements?: DownwardInterfaceRequirement[];
+    provides: BindingProvidedCapabilities;
+    requires: BindingRequirements;
+};
+
+type RuntimeBindingInput = {
+    id: string;
 };
 
 type BindingRole = "client" | "server";
@@ -54,37 +54,43 @@ type DownwardInterfaceType =
     | "request-response-endpoint"
     | "stream-socket"
     | "datagram-socket"
-    | "message-endpoint"
+    | "message-channel"
     | "protocol-stack";
 
-type TransportType = "tcp" | "udp" | "other";
+type TransportType = "tcp" | "udp" | "in-memory" | "serial" | "other";
 
-type InterfaceProfile = "berkeley-socket-like" | "runtime-native" | "library-backed" | "nodejs-native" | "none";
+type InterfaceDirection = BindingRole | "client-server";
+
+type InterfaceProfile = "berkeley-like" | "runtime-native" | "library-backed" | "nodejs-native" | "none";
 
 type DownwardInterfaceRequirement = {
     type: DownwardInterfaceType;
+    direction: InterfaceDirection;
     transport?: TransportType;
-    direction: BindingRole | "client-server";
     protocol?: string;
-    interfaceProfile?: InterfaceProfile;
-    capabilities?: string[];
-    resources?: {
-        port?: number;
-        preferredPort?: number;
-        requiredPort?: boolean;
-        exclusive?: boolean;
-        host?: string;
-    };
+    profile?: InterfaceProfile;
 };
 
-type BindingProvides = {
+type PortRequirement = {
+    transport?: TransportType;
+    preferred?: number;
+    required?: boolean;
+    exclusive?: boolean;
+};
+
+type BindingResourceRequirements = {
+    ports?: PortRequirement[];
+};
+
+type BindingProvidedCapabilities = {
     schemes: string[];
     roles: BindingRole[];
     interactions: WoTInteraction[];
 };
 
-type BindingRequires = {
-    downwardInterfaces: DownwardInterfaceRequirement[];
+type BindingRequirements = {
+    interfaces: DownwardInterfaceRequirement[];
+    resources?: BindingResourceRequirements;
 };
 
 //Runtime Manifest
@@ -94,20 +100,13 @@ type RuntimeBindingManifest = {
     version?: string;
     description?: string;
     entrypoint: string;
-    provides: BindingProvides;
-    requires: BindingRequires;
-    // Legacy fields are kept for compatibility while old manifests are migrated.
-    schemes?: string[];
-    capabilities?: {
-        client?: boolean;
-        server?: boolean;
-    };
+    provides: BindingProvidedCapabilities;
+    requires: BindingRequirements;
 };
 
 //Output after createBinding()
 type DynamicBinding = {
     id: string;
-    schemes?: string[];
     createClientFactory?: () => RuntimeClientFactory;
     createServer?: () => RuntimeServer;
 };
@@ -132,15 +131,18 @@ type LoadedBinding = {
 type RuntimeDownwardInterface = {
     id: string;
     type: DownwardInterfaceType;
+    direction: InterfaceDirection[];
     transport?: TransportType;
-    directions: Array<BindingRole | "client-server">;
     protocol?: string;
-    interfaceProfile?: InterfaceProfile;
-    capabilities?: string[];
+    profile?: InterfaceProfile;
 };
 
 type RuntimeCapabilities = {
-    downwardInterfaces: RuntimeDownwardInterface[];
+    interfaces: RuntimeDownwardInterface[];
+    resourceManagement: {
+        portCheck: boolean;
+        exclusivePortCheck: boolean;
+    };
 };
 
 type CompatibilityResult = {
@@ -155,49 +157,45 @@ let registeredBindings: RuntimeBinding[] = [];
 const loadedBindings = new Map<string, LoadedBinding>();
 
 const runtimeCapabilities: RuntimeCapabilities = {
-    downwardInterfaces: [
+    interfaces: [
         {
-            id: "node-http-request-response-server",
+            id: "node-request-response-server",
             type: "request-response-endpoint",
+            direction: ["server"],
             transport: "tcp",
-            directions: ["server"],
-            interfaceProfile: "nodejs-native",
-            capabilities: ["createServer", "handleRequest", "sendResponse", "closeServer"],
         },
         {
-            id: "node-http-request-response-client",
+            id: "node-request-response-client",
             type: "request-response-endpoint",
+            direction: ["client"],
             transport: "tcp",
-            directions: ["client"],
-            interfaceProfile: "nodejs-native",
-            capabilities: ["sendRequest", "receiveResponse"],
         },
         {
             id: "node-stream-socket",
             type: "stream-socket",
+            direction: ["client", "server"],
             transport: "tcp",
-            directions: ["client", "server"],
-            interfaceProfile: "berkeley-socket-like",
-            capabilities: ["listen", "accept", "connect", "send", "receive", "close"],
+            profile: "berkeley-like",
         },
         {
             id: "node-datagram-socket",
             type: "datagram-socket",
+            direction: ["client", "server"],
             transport: "udp",
-            directions: ["client", "server"],
-            interfaceProfile: "berkeley-socket-like",
-            capabilities: ["bind", "sendDatagram", "receiveDatagram", "close"],
+            profile: "berkeley-like",
         },
         {
-            id: "node-wot-coap-server-stack",
+            id: "node-wot-coap-stack",
             type: "protocol-stack",
             protocol: "coap",
+            direction: ["server"],
             transport: "udp",
-            directions: ["server"],
-            interfaceProfile: "library-backed",
-            capabilities: ["createProtocolServer", "registerResource", "handleRequest", "sendResponse", "closeServer"],
         },
     ],
+    resourceManagement: {
+        portCheck: true,
+        exclusivePortCheck: true,
+    },
 };
 
 //return the running Servient from WoT
@@ -232,31 +230,6 @@ function resolveBindingBasePath(bindingId: string): string {
     return bindingBasePath;
 }
 
-function normalizeManifest(rawManifest: RuntimeBindingManifest, bindingId: string): RuntimeBindingManifest {
-    const legacyRoles: BindingRole[] = [];
-
-    if (rawManifest.capabilities?.client === true) {
-        legacyRoles.push("client");
-    }
-
-    if (rawManifest.capabilities?.server === true) {
-        legacyRoles.push("server");
-    }
-
-    return {
-        ...rawManifest,
-        id: rawManifest.id ?? bindingId,
-        provides: rawManifest.provides ?? {
-            schemes: rawManifest.schemes ?? [],
-            roles: legacyRoles,
-            interactions: [],
-        },
-        requires: rawManifest.requires ?? {
-            downwardInterfaces: [],
-        },
-    };
-}
-
 function validateBindingManifest(manifest: RuntimeBindingManifest): void {
     if (typeof manifest.id !== "string" || manifest.id.length === 0) {
         throw new Error("Binding manifest does not define a valid id.");
@@ -264,6 +237,10 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
 
     if (typeof manifest.entrypoint !== "string" || manifest.entrypoint.length === 0) {
         throw new Error(`Binding '${manifest.id}' manifest does not define a valid entrypoint.`);
+    }
+
+    if (manifest.provides == null || typeof manifest.provides !== "object") {
+        throw new Error(`Binding '${manifest.id}' manifest must define provides.`);
     }
 
     if (!Array.isArray(manifest.provides?.schemes)) {
@@ -278,25 +255,60 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
         throw new Error(`Binding '${manifest.id}' manifest provides.interactions must be an array.`);
     }
 
-    if (!Array.isArray(manifest.requires?.downwardInterfaces)) {
-        throw new Error(`Binding '${manifest.id}' manifest requires.downwardInterfaces must be an array.`);
+    if (manifest.requires == null || typeof manifest.requires !== "object") {
+        throw new Error(`Binding '${manifest.id}' manifest must define requires.`);
     }
 
-    manifest.requires.downwardInterfaces.forEach((requirement, index) => {
+    if (!Array.isArray(manifest.requires?.interfaces)) {
+        throw new Error(`Binding '${manifest.id}' manifest requires.interfaces must be an array.`);
+    }
+
+    manifest.requires.interfaces.forEach((requirement, index) => {
         if (typeof requirement?.type !== "string" || requirement.type.length === 0) {
-            throw new Error(`Binding '${manifest.id}' requirement ${index} does not define a valid type.`);
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} does not define a valid type.`);
         }
 
         if (typeof requirement.direction !== "string" || requirement.direction.length === 0) {
-            throw new Error(`Binding '${manifest.id}' requirement ${index} does not define a valid direction.`);
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} does not define a valid direction.`);
+        }
+
+        if (requirement.transport != null && typeof requirement.transport !== "string") {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} transport must be a string.`);
+        }
+
+        if (requirement.protocol != null && typeof requirement.protocol !== "string") {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} protocol must be a string.`);
+        }
+
+        if (requirement.profile != null && typeof requirement.profile !== "string") {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} profile must be a string.`);
+        }
+    });
+
+    if (manifest.requires.resources?.ports != null && !Array.isArray(manifest.requires.resources.ports)) {
+        throw new Error(`Binding '${manifest.id}' manifest requires.resources.ports must be an array.`);
+    }
+
+    manifest.requires.resources?.ports?.forEach((portRequirement, index) => {
+        if (portRequirement.transport != null && typeof portRequirement.transport !== "string") {
+            throw new Error(`Binding '${manifest.id}' port requirement ${index} transport must be a string.`);
+        }
+
+        if (portRequirement.preferred != null && typeof portRequirement.preferred !== "number") {
+            throw new Error(`Binding '${manifest.id}' port requirement ${index} preferred must be a number.`);
+        }
+
+        if (portRequirement.required != null && typeof portRequirement.required !== "boolean") {
+            throw new Error(`Binding '${manifest.id}' port requirement ${index} required must be a boolean.`);
+        }
+
+        if (portRequirement.exclusive != null && typeof portRequirement.exclusive !== "boolean") {
+            throw new Error(`Binding '${manifest.id}' port requirement ${index} exclusive must be a boolean.`);
         }
     });
 }
 
-function supportsDirection(
-    runtimeDirections: Array<BindingRole | "client-server">,
-    requiredDirection: BindingRole | "client-server"
-): boolean {
+function supportsDirection(runtimeDirections: InterfaceDirection[], requiredDirection: InterfaceDirection): boolean {
     if (runtimeDirections.includes("client-server")) {
         return true;
     }
@@ -313,20 +325,7 @@ function supportsInterfaceProfile(runtimeProfile?: InterfaceProfile, requiredPro
         return true;
     }
 
-    if (runtimeProfile === requiredProfile) {
-        return true;
-    }
-
-    return requiredProfile === "runtime-native" && runtimeProfile != null && runtimeProfile !== "none";
-}
-
-function hasRequiredCapabilities(runtimeInterface: RuntimeDownwardInterface, requirement: DownwardInterfaceRequirement): boolean {
-    if (requirement.capabilities == null || requirement.capabilities.length === 0) {
-        return true;
-    }
-
-    const runtimeCapabilitiesForInterface = runtimeInterface.capabilities ?? [];
-    return requirement.capabilities.every((capability) => runtimeCapabilitiesForInterface.includes(capability));
+    return runtimeProfile === requiredProfile;
 }
 
 function describeRequirement(requirement: DownwardInterfaceRequirement): string {
@@ -335,28 +334,44 @@ function describeRequirement(requirement: DownwardInterfaceRequirement): string 
         requirement.transport == null ? undefined : `transport=${requirement.transport}`,
         requirement.protocol == null ? undefined : `protocol=${requirement.protocol}`,
         `direction=${requirement.direction}`,
-        requirement.interfaceProfile == null ? undefined : `interfaceProfile=${requirement.interfaceProfile}`,
+        requirement.profile == null ? undefined : `profile=${requirement.profile}`,
     ]
         .filter((part): part is string => part != null)
         .join(" ");
 }
 
-function getCurrentRuntimeState(): { usedPorts: number[]; registeredSchemes: string[] } {
-    const usedPorts = new Set<number>();
+type UsedPort = {
+    port: number;
+    transport?: TransportType;
+};
+
+function getCurrentRuntimeState(): { usedPorts: UsedPort[]; registeredSchemes: string[] } {
+    const usedPorts = new Map<string, UsedPort>();
     const registeredSchemes = new Set<string>();
 
     loadedBindings.forEach((loadedBinding) => {
-        loadedBinding.binding.schemes?.forEach((scheme) => registeredSchemes.add(scheme));
+        loadedBinding.binding.provides.schemes.forEach((scheme) => registeredSchemes.add(scheme));
         loadedBinding.clientSchemes.forEach((scheme) => registeredSchemes.add(scheme));
+
+        loadedBinding.binding.requires.resources?.ports?.forEach((portRequirement) => {
+            if (typeof portRequirement.preferred === "number") {
+                const key = `${portRequirement.transport ?? "any"}:${portRequirement.preferred}`;
+                usedPorts.set(key, {
+                    port: portRequirement.preferred,
+                    transport: portRequirement.transport,
+                });
+            }
+        });
 
         const port = loadedBinding.server?.getPort();
         if (typeof port === "number" && port > 0) {
-            usedPorts.add(port);
+            const key = `any:${port}`;
+            usedPorts.set(key, { port });
         }
     });
 
     return {
-        usedPorts: [...usedPorts],
+        usedPorts: [...usedPorts.values()],
         registeredSchemes: [...registeredSchemes],
     };
 }
@@ -365,15 +380,15 @@ function checkBindingCompatibility(
     manifest: RuntimeBindingManifest,
     capabilities: RuntimeCapabilities,
     currentState: {
-        usedPorts: number[];
+        usedPorts: UsedPort[];
         registeredSchemes: string[];
     }
 ): CompatibilityResult {
     const missingRequirements: string[] = [];
     const conflicts: string[] = [];
 
-    for (const requirement of manifest.requires.downwardInterfaces) {
-        const matchingInterface = capabilities.downwardInterfaces.find((runtimeInterface) => {
+    for (const requirement of manifest.requires.interfaces) {
+        const matchingInterface = capabilities.interfaces.find((runtimeInterface) => {
             if (runtimeInterface.type !== requirement.type) {
                 return false;
             }
@@ -386,24 +401,41 @@ function checkBindingCompatibility(
                 return false;
             }
 
-            if (!supportsDirection(runtimeInterface.directions, requirement.direction)) {
+            if (!supportsDirection(runtimeInterface.direction, requirement.direction)) {
                 return false;
             }
 
-            if (!supportsInterfaceProfile(runtimeInterface.interfaceProfile, requirement.interfaceProfile)) {
-                return false;
-            }
-
-            return hasRequiredCapabilities(runtimeInterface, requirement);
+            return supportsInterfaceProfile(runtimeInterface.profile, requirement.profile);
         });
 
         if (matchingInterface == null) {
-            missingRequirements.push(`No downward interface found for ${describeRequirement(requirement)}`);
+            missingRequirements.push(`No runtime interface found for ${describeRequirement(requirement)}.`);
+        }
+    }
+
+    for (const portRequirement of manifest.requires.resources?.ports ?? []) {
+        const shouldCheckPort =
+            capabilities.resourceManagement.portCheck === true &&
+            portRequirement.preferred != null &&
+            (portRequirement.required === true ||
+                (capabilities.resourceManagement.exclusivePortCheck === true && portRequirement.exclusive === true));
+
+        if (!shouldCheckPort) {
+            continue;
         }
 
-        const requiredPort = requirement.resources?.port ?? requirement.resources?.preferredPort;
-        if (requirement.resources?.requiredPort === true && requiredPort != null && currentState.usedPorts.includes(requiredPort)) {
-            conflicts.push(`Port ${requiredPort} is already in use`);
+        const portIsUsed = currentState.usedPorts.some((usedPort) => {
+            const samePort = usedPort.port === portRequirement.preferred;
+            const sameTransport =
+                usedPort.transport == null ||
+                portRequirement.transport == null ||
+                usedPort.transport === portRequirement.transport;
+
+            return samePort && sameTransport;
+        });
+
+        if (portIsUsed) {
+            conflicts.push(`Port ${portRequirement.preferred} is already in use`);
         }
     }
 
@@ -435,7 +467,7 @@ function readBindingManifest(bindingId: string): {
 
     clearModuleCache(manifestPath);
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const manifest = normalizeManifest(require(manifestPath) as RuntimeBindingManifest, bindingId);
+    const manifest = require(manifestPath) as RuntimeBindingManifest;
     validateBindingManifest(manifest);
 
     if (manifest.id !== bindingId) {
@@ -526,7 +558,7 @@ function isRuntimeServer(value: unknown): value is RuntimeServer {
 /*
 Main Function which loads the provided bindings, validates them and registers them at the Servient
 */
-async function registerBinding(input: RuntimeBinding, servient: RuntimeServient): Promise<LoadedBinding> {
+async function registerBinding(input: RuntimeBindingInput, servient: RuntimeServient): Promise<LoadedBinding> {
     const { manifest, binding, manifestPath, entrypointPath } = loadBinding(input.id);
     const clientSchemes: string[] = [];
     let server: RuntimeServer | undefined;
@@ -574,12 +606,8 @@ async function registerBinding(input: RuntimeBinding, servient: RuntimeServient)
         return {
             binding: {
                 id: input.id,
-                protocol: input.protocol ?? binding.schemes?.[0] ?? manifest.provides.schemes[0] ?? manifest.schemes?.[0],
-                package: input.package ?? manifest.name ?? path.relative(process.cwd(), entrypointPath),
-                schemes: manifest.provides.schemes,
-                roles: manifest.provides.roles,
-                interactions: manifest.provides.interactions,
-                downwardRequirements: manifest.requires.downwardInterfaces,
+                provides: manifest.provides,
+                requires: manifest.requires,
             },
             clientSchemes,
             server,
@@ -658,26 +686,11 @@ async function main() {
                         id: {
                             type: "string",
                         },
-                        protocol: {
-                            type: "string",
+                        provides: {
+                            type: "object",
                         },
-                        package: {
-                            type: "string",
-                        },
-                        schemes: {
-                            type: "array",
-                            items: { type: "string" },
-                        },
-                        roles: {
-                            type: "array",
-                            items: { type: "string" },
-                        },
-                        interactions: {
-                            type: "array",
-                            items: { type: "string" },
-                        },
-                        downwardRequirements: {
-                            type: "array",
+                        requires: {
+                            type: "object",
                         },
                     },
                 },
@@ -696,12 +709,6 @@ async function main() {
                     type: "object",
                     properties: {
                         id: {
-                            type: "string",
-                        },
-                        protocol: {
-                            type: "string",
-                        },
-                        package: {
                             type: "string",
                         },
                     },
@@ -803,7 +810,7 @@ async function main() {
     thing.setPropertyReadHandler("runtimeCapabilities", async () => runtimeCapabilities);
 
     thing.setActionHandler("addBinding", async (params?: WoT.InteractionOutput | null) => {
-        const input = params == null ? undefined : ((await params.value()) as RuntimeBinding);
+        const input = params == null ? undefined : ((await params.value()) as RuntimeBindingInput);
 
         if (typeof input?.id !== "string" || input.id.length === 0) {
             return { result: false, message: "Binding id is required." };
@@ -840,7 +847,7 @@ async function main() {
 
             return {
                 result: true,
-                message: `Binding '${input.id}' loaded with schemes ${loadedBinding.clientSchemes.join(", ") || "server-only"}.`,
+                message: `Binding '${input.id}' loaded with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
             };
         } catch (error) {
             lastOperation = `Failed to add binding '${input.id}'`;

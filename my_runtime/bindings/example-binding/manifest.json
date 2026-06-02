@@ -2,14 +2,17 @@
     "id": "example-binding",
     "name": "Example Binding",
     "version": "1.0.0",
-    "description": "Minimal mock binding for testing the dynamic binding lifecycle.",
+    "description": "Minimal example binding for testing the dynamic loading mechanism.",
     "entrypoint": "./index.js",
     "provides": {
         "schemes": ["example"],
-        "roles": ["client", "server"],
-        "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction", "subscribeEvent"]
+        "roles": ["client"],
+        "interactions": ["readThingDescription"]
     },
     "requires": {
-        "downwardInterfaces": []
+        "interfaces": [],
+        "resources": {
+            "ports": []
+        }
     }
 }

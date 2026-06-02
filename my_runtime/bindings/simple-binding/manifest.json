@@ -10,24 +10,27 @@
         "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
     },
     "requires": {
-        "downwardInterfaces": [
+        "interfaces": [
             {
                 "type": "request-response-endpoint",
-                "transport": "tcp",
                 "direction": "server",
-                "interfaceProfile": "nodejs-native",
-                "resources": {
-                    "preferredPort": 8091,
-                    "requiredPort": true,
-                    "exclusive": true
-                }
+                "transport": "tcp"
             },
             {
                 "type": "request-response-endpoint",
-                "transport": "tcp",
                 "direction": "client",
-                "interfaceProfile": "nodejs-native"
+                "transport": "tcp"
             }
-        ]
+        ],
+        "resources": {
+            "ports": [
+                {
+                    "transport": "tcp",
+                    "preferred": 8091,
+                    "required": true,
+                    "exclusive": true
+                }
+            ]
+        }
     }
 }
