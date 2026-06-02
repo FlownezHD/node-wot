@@ -14,12 +14,14 @@
             {
                 "type": "request-response-endpoint",
                 "direction": "server",
-                "transport": "tcp"
+                "transport": "tcp",
+                "profile": "nodejs-native"
             },
             {
                 "type": "request-response-endpoint",
                 "direction": "client",
-                "transport": "tcp"
+                "transport": "tcp",
+                "profile": "nodejs-native"
             }
         ],
         "resources": {

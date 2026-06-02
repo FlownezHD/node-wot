@@ -163,12 +163,14 @@ const runtimeCapabilities: RuntimeCapabilities = {
             type: "request-response-endpoint",
             direction: ["server"],
             transport: "tcp",
+            profile: "nodejs-native",
         },
         {
             id: "node-request-response-client",
             type: "request-response-endpoint",
             direction: ["client"],
             transport: "tcp",
+            profile: "nodejs-native",
         },
         {
             id: "node-stream-socket",
@@ -190,6 +192,7 @@ const runtimeCapabilities: RuntimeCapabilities = {
             protocol: "coap",
             direction: ["server"],
             transport: "udp",
+            profile: "library-backed",
         },
     ],
     resourceManagement: {

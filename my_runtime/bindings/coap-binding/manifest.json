@@ -15,7 +15,8 @@
                 "type": "protocol-stack",
                 "protocol": "coap",
                 "direction": "server",
-                "transport": "udp"
+                "transport": "udp",
+                "profile": "library-backed"
             }
         ],
         "resources": {

@@ -2,6 +2,24 @@
 
 Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node-wot Repository. Der Prototyp befindet sich unter `my_runtime` und stellt eine WoT-basierte Management Runtime bereit, ueber die Protocol Bindings zur Laufzeit geladen, geprueft und wieder entfernt werden koennen.
 
+## Inhaltsverzeichnis
+
+- [1. Voraussetzungen](#1-voraussetzungen)
+- [2. Docker-Image](#2-docker-image)
+- [3. Runtime-Start](#3-runtime-start)
+- [4. Runtime-Endpunkte](#4-runtime-endpunkte)
+- [5. Binding-Manifest-Modell](#5-binding-manifest-modell)
+- [6. Compatibility Check](#6-compatibility-check)
+- [7. Example-Binding](#7-example-binding)
+- [8. CoAP-Binding](#8-coap-binding)
+  - [8.1 CoAP-Zugriff](#81-coap-zugriff)
+- [9. Simple-Binding](#9-simple-binding)
+  - [9.1 Simple-Server-Zugriff](#91-simple-server-zugriff)
+  - [9.2 Simple-Client-Test](#92-simple-client-test)
+- [10. Negativtests](#10-negativtests)
+  - [10.1 Bereits geladenes Binding](#101-bereits-geladenes-binding)
+  - [10.2 Fehlendes Runtime-Interface](#102-fehlendes-runtime-interface)
+
 ## 1. Voraussetzungen
 
 Die Projektabhaengigkeiten muessen im Repository-Root installiert sein:
@@ -102,7 +120,8 @@ Die Bindings unter `my_runtime/bindings/<binding-id>` besitzen jeweils eine `man
     {
       "type": "request-response-endpoint",
       "direction": "server",
-      "transport": "tcp"
+      "transport": "tcp",
+      "profile": "nodejs-native"
     }
   ],
   "resources": {
