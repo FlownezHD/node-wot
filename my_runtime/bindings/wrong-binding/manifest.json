@@ -1,0 +1,25 @@
+{
+    "id": "wrong-binding",
+    "name": "Wrong Binding",
+    "version": "1.0.0",
+    "description": "Intentionally invalid binding used to test runtime validation after compatibility checks.",
+    "entrypoint": "./index.js",
+    "provides": {
+        "schemes": ["wrong"],
+        "roles": ["client"],
+        "interactions": ["readThingDescription", "readProperty"]
+    },
+    "requires": {
+        "interfaces": [
+            {
+                "type": "request-response-endpoint",
+                "direction": "client",
+                "transport": "tcp",
+                "profile": "nodejs-native"
+            }
+        ],
+        "resources": {
+            "ports": []
+        }
+    }
+}

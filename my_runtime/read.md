@@ -19,6 +19,8 @@ Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node
 - [10. Negativtests](#10-negativtests)
   - [10.1 Bereits geladenes Binding](#101-bereits-geladenes-binding)
   - [10.2 Fehlendes Runtime-Interface](#102-fehlendes-runtime-interface)
+  - [10.3 Fehlerhafte Binding-Implementierung](#103-fehlerhafte-binding-implementierung)
+- [11. Automatisierte Testausfuehrung](#11-automatisierte-testausfuehrung)
 
 ## 1. Voraussetzungen
 
@@ -391,3 +393,55 @@ Ein Binding-Manifest mit einem nicht verfuegbaren Interface fuehrt zu einem fehl
 ```
 
 Da die Runtime aktuell kein `message-channel` Interface in `runtimeCapabilities.interfaces` bereitstellt, meldet `checkBindingCompatibility` dieses Requirement als fehlend.
+
+### 10.3 Fehlerhafte Binding-Implementierung
+
+Das Binding `wrong-binding` ist ein absichtlich fehlerhaftes Negativbeispiel unter:
+
+```text
+my_runtime/bindings/wrong-binding
+```
+
+Das Manifest ist formal gueltig und beschreibt kompatible Requirements. Der Entry Point liefert jedoch eine ungueltige ClientFactory ohne `getClient()`-Methode. Dadurch sollte der Compatibility Check erfolgreich sein, waehrend das tatsaechliche Laden ueber `addBinding` fehlschlaegt.
+
+Compatibility Check:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
+  -H "Content-Type: application/json" \
+  --data '{"id":"wrong-binding"}'
+```
+
+Ladeversuch:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"wrong-binding"}'
+```
+
+Erwartete Fehlermeldung:
+
+```text
+Binding 'wrong-binding' returned an invalid client factory.
+```
+
+## 11. Automatisierte Testausfuehrung
+
+Das Skript `my_runtime/run-runtime-tests.sh` fuehrt die dokumentierten Runtime-, Binding- und Negativtests automatisiert aus. Eine laufende Runtime unter `http://localhost:8080` wird vorausgesetzt.
+
+```bash
+./my_runtime/run-runtime-tests.sh
+```
+
+Das Skript gibt jeden Testschritt mit Statussymbol aus und beendet sich mit einem Fehlercode, wenn mindestens ein Test fehlschlaegt.
+
+Alternative Endpunkte koennen ueber Umgebungsvariablen gesetzt werden:
+
+```bash
+BASE_URL=http://localhost:8080 \
+SIMPLE_BASE_URL=http://localhost:8091 \
+COAP_HOST=127.0.0.1 \
+COAP_PORT=5684 \
+./my_runtime/run-runtime-tests.sh
+```
