@@ -57,11 +57,11 @@ type DownwardInterfaceType =
     | "message-channel"
     | "protocol-stack";
 
-type TransportType = "tcp" | "udp" | "in-memory" | "serial" | "other";
+type TransportType = "tcp" | "udp";
 
 type InterfaceDirection = BindingRole | "client-server";
 
-type InterfaceProfile = "berkeley-like" | "runtime-native" | "library-backed" | "nodejs-native" | "none";
+type InterfaceProfile = "berkeley-like" | "library-backed" | "nodejs-native" | "none";
 
 type DownwardInterfaceRequirement = {
     type: DownwardInterfaceType;
@@ -150,6 +150,27 @@ type CompatibilityResult = {
     missingRequirements: string[];
     conflicts: string[];
 };
+
+const validTransportTypes: TransportType[] = ["tcp", "udp"];
+const validBindingRoles: BindingRole[] = ["client", "server"];
+const validWoTInteractions: WoTInteraction[] = [
+    "readThingDescription",
+    "readProperty",
+    "writeProperty",
+    "observeProperty",
+    "invokeAction",
+    "subscribeEvent",
+    "unsubscribeEvent",
+];
+const validDownwardInterfaceTypes: DownwardInterfaceType[] = [
+    "request-response-endpoint",
+    "stream-socket",
+    "datagram-socket",
+    "message-channel",
+    "protocol-stack",
+];
+const validInterfaceDirections: InterfaceDirection[] = ["client", "server", "client-server"];
+const validInterfaceProfiles: InterfaceProfile[] = ["berkeley-like", "library-backed", "nodejs-native", "none"];
 
 let runtimeStatus = "running";
 let lastOperation = "Runtime initialized";
@@ -250,13 +271,31 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
         throw new Error(`Binding '${manifest.id}' manifest provides.schemes must be an array.`);
     }
 
+    manifest.provides.schemes.forEach((scheme, index) => {
+        if (typeof scheme !== "string" || scheme.length === 0) {
+            throw new Error(`Binding '${manifest.id}' provides.schemes entry ${index} must be a non-empty string.`);
+        }
+    });
+
     if (!Array.isArray(manifest.provides?.roles)) {
         throw new Error(`Binding '${manifest.id}' manifest provides.roles must be an array.`);
     }
 
+    manifest.provides.roles.forEach((role, index) => {
+        if (!validBindingRoles.includes(role)) {
+            throw new Error(`Binding '${manifest.id}' provides.roles entry ${index} must be client or server.`);
+        }
+    });
+
     if (!Array.isArray(manifest.provides?.interactions)) {
         throw new Error(`Binding '${manifest.id}' manifest provides.interactions must be an array.`);
     }
+
+    manifest.provides.interactions.forEach((interaction, index) => {
+        if (!validWoTInteractions.includes(interaction)) {
+            throw new Error(`Binding '${manifest.id}' provides.interactions entry ${index} is not supported.`);
+        }
+    });
 
     if (manifest.requires == null || typeof manifest.requires !== "object") {
         throw new Error(`Binding '${manifest.id}' manifest must define requires.`);
@@ -267,24 +306,24 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
     }
 
     manifest.requires.interfaces.forEach((requirement, index) => {
-        if (typeof requirement?.type !== "string" || requirement.type.length === 0) {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} does not define a valid type.`);
+        if (!validDownwardInterfaceTypes.includes(requirement?.type)) {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} type is not supported.`);
         }
 
-        if (typeof requirement.direction !== "string" || requirement.direction.length === 0) {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} does not define a valid direction.`);
+        if (!validInterfaceDirections.includes(requirement.direction)) {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} direction must be client, server or client-server.`);
         }
 
-        if (requirement.transport != null && typeof requirement.transport !== "string") {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} transport must be a string.`);
+        if (requirement.transport != null && !validTransportTypes.includes(requirement.transport)) {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} transport must be tcp or udp.`);
         }
 
         if (requirement.protocol != null && typeof requirement.protocol !== "string") {
             throw new Error(`Binding '${manifest.id}' interface requirement ${index} protocol must be a string.`);
         }
 
-        if (requirement.profile != null && typeof requirement.profile !== "string") {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} profile must be a string.`);
+        if (requirement.profile != null && !validInterfaceProfiles.includes(requirement.profile)) {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} profile is not supported.`);
         }
     });
 
@@ -293,8 +332,8 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
     }
 
     manifest.requires.resources?.ports?.forEach((portRequirement, index) => {
-        if (portRequirement.transport != null && typeof portRequirement.transport !== "string") {
-            throw new Error(`Binding '${manifest.id}' port requirement ${index} transport must be a string.`);
+        if (portRequirement.transport != null && !validTransportTypes.includes(portRequirement.transport)) {
+            throw new Error(`Binding '${manifest.id}' port requirement ${index} transport must be tcp or udp.`);
         }
 
         if (portRequirement.preferred != null && typeof portRequirement.preferred !== "number") {
