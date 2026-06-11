@@ -1,0 +1,13 @@
+{
+    "private": true,
+    "name": "dynamic-binding-poc",
+    "description": "Small presentation scenario for dynamic WoT protocol binding loading.",
+    "scripts": {
+        "battery": "node devices/battery-storage-http.js",
+        "old-meter": "node devices/old-meter-http.js",
+        "new-meter": "node devices/new-meter-proprietary-coap.js"
+    },
+    "dependencies": {
+        "coap": "^1.4.1"
+    }
+}

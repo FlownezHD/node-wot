@@ -24,7 +24,7 @@ function loadCoapBindingModule() {
 }
 
 function createBinding() {
-    //Lädt das gefundene x.js modul und läd den CoapServer daraus
+    // Loads the selected node-wot CoAP module and uses its CoapServer implementation.
     const { CoapServer } = loadCoapBindingModule();
 
     return {

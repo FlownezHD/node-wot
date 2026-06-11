@@ -1,48 +1,48 @@
 # Runtime Prototype Documentation
 
-Diese Dokumentation beschreibt den Betrieb des Runtime-Prototyps im Eclipse node-wot Repository. Der Prototyp befindet sich unter `my_runtime` und stellt eine WoT-basierte Management Runtime bereit, über die Protocol Bindings zur Laufzeit geladen, geprüft und wieder entfernt werden können.
+This document describes how to operate the runtime prototype in the Eclipse node-wot repository. The prototype is located in `my_runtime` and provides a WoT-based management runtime that can load, validate, and remove protocol bindings at runtime.
 
-## Inhaltsverzeichnis
+## Table of Contents
 
-- [1. Voraussetzungen](#1-voraussetzungen)
-- [2. Docker-Image](#2-docker-image)
-- [3. Runtime-Start](#3-runtime-start)
-- [4. Runtime-Endpunkte](#4-runtime-endpunkte)
-- [5. Binding-Manifest-Modell](#5-binding-manifest-modell)
+- [1. Prerequisites](#1-prerequisites)
+- [2. Docker Image](#2-docker-image)
+- [3. Runtime Startup](#3-runtime-startup)
+- [4. Runtime Endpoints](#4-runtime-endpoints)
+- [5. Binding Manifest Model](#5-binding-manifest-model)
 - [6. Compatibility Check](#6-compatibility-check)
-- [7. Example-Binding](#7-example-binding)
-- [8. CoAP-Binding](#8-coap-binding)
-  - [8.1 CoAP-Zugriff](#81-coap-zugriff)
-- [9. Simple-Binding](#9-simple-binding)
-  - [9.1 Simple-Server-Zugriff](#91-simple-server-zugriff)
-  - [9.2 Simple-Client-Test](#92-simple-client-test)
-- [10. Negativtests](#10-negativtests)
-  - [10.1 Bereits geladenes Binding](#101-bereits-geladenes-binding)
-  - [10.2 Fehlendes Runtime-Interface](#102-fehlendes-runtime-interface)
-  - [10.3 Fehlerhafte Binding-Implementierung](#103-fehlerhafte-binding-implementierung)
-- [11. Automatisierte Testausführung](#11-automatisierte-testausführung)
+- [7. Example Binding](#7-example-binding)
+- [8. CoAP Binding](#8-coap-binding)
+  - [8.1 CoAP Access](#81-coap-access)
+- [9. Simple Binding](#9-simple-binding)
+  - [9.1 Simple Server Access](#91-simple-server-access)
+  - [9.2 Simple Client Test](#92-simple-client-test)
+- [10. Negative Tests](#10-negative-tests)
+  - [10.1 Already Loaded Binding](#101-already-loaded-binding)
+  - [10.2 Missing Runtime Interface](#102-missing-runtime-interface)
+  - [10.3 Invalid Binding Implementation](#103-invalid-binding-implementation)
+- [11. Automated Test Execution](#11-automated-test-execution)
 
-## 1. Voraussetzungen
+## 1. Prerequisites
 
-Die Projektabhängigkeiten müssen im Repository-Root installiert sein:
+The project dependencies must be installed from the repository root:
 
 ```bash
 npm install
 ```
 
-## 2. Docker-Image
+## 2. Docker Image
 
-Das Docker-Image enthält die `node-wot`-CLI. Nach Änderungen an `packages/cli/*`, `packages/core/*` oder am `Dockerfile` ist ein Neubau des Images erforderlich:
+The Docker image contains the `node-wot` CLI. After changes to `packages/cli/*`, `packages/core/*`, or the `Dockerfile`, the image has to be rebuilt:
 
 ```bash
 npm run build:docker
 ```
 
-Änderungen unter `my_runtime/runtime.ts` oder `my_runtime/bindings/*` erfordern in der Regel keinen neuen Image-Build, da diese Dateien beim Start per Volume in den Container gemountet werden.
+Changes below `my_runtime/runtime.ts` or `my_runtime/bindings/*` usually do not require a new image build because these files are mounted into the container as a volume at startup.
 
-## 3. Runtime-Start
+## 3. Runtime Startup
 
-Die Runtime wird als WoT-Script über die node-wot CLI gestartet. Das Repository wird im Container nach `/workspace` gemountet, damit `my_runtime/runtime.ts` und die lokalen Bindings verfügbar sind.
+The runtime is started as a WoT script through the node-wot CLI. The repository is mounted into the container at `/workspace` so that `my_runtime/runtime.ts` and the local bindings are available.
 
 ```bash
 docker run -it --init \
@@ -57,18 +57,18 @@ docker run -it --init \
   node-wot /workspace/my_runtime/runtime.ts
 ```
 
-Relevante Startparameter:
+Relevant startup parameters:
 
-- `TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json`: TypeScript-Konfiguration für `my_runtime/runtime.ts`
-- `TS_NODE_FILES=true`: Laden der benötigten globalen WoT-Typdefinitionen
-- `-v "$(pwd):/workspace"`: Mount des lokalen Repositorys in den Container
-- `-p 8080:8080/tcp`: HTTP-Zugriff auf die Management Runtime
-- `-p 8091:8091/tcp`: Zugriff auf den Simple-Binding-Server
-- `-p 5684:5684/udp`: Zugriff auf den dynamisch geladenen CoAP-Server
+- `TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json`: TypeScript configuration for `my_runtime/runtime.ts`
+- `TS_NODE_FILES=true`: loads the required global WoT type definitions
+- `-v "$(pwd):/workspace"`: mounts the local repository into the container
+- `-p 8080:8080/tcp`: HTTP access to the management runtime
+- `-p 8091:8091/tcp`: access to the Simple Binding server
+- `-p 5684:5684/udp`: access to the dynamically loaded CoAP server
 
-## 4. Runtime-Endpunkte
+## 4. Runtime Endpoints
 
-Die Management Runtime wird selbst als WoT Thing exponiert.
+The management runtime is exposed as a WoT Thing itself.
 
 Thing Description:
 
@@ -76,35 +76,35 @@ Thing Description:
 curl http://localhost:8080/runtime
 ```
 
-Status-Property:
+Status property:
 
 ```bash
 curl http://localhost:8080/runtime/properties/status
 ```
 
-Letzte Operation:
+Last operation:
 
 ```bash
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-Registrierte Bindings:
+Registered bindings:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 ```
 
-Runtime Capabilities:
+Runtime capabilities:
 
 ```bash
 curl http://localhost:8080/runtime/properties/runtimeCapabilities
 ```
 
-## 5. Binding-Manifest-Modell
+## 5. Binding Manifest Model
 
-Die Bindings unter `my_runtime/bindings/<binding-id>` besitzen jeweils eine `manifest.json`. Das finale Manifest-Modell trennt zwischen der oberen WoT-Seite und der unteren Runtime-/Plattformseite.
+Each binding below `my_runtime/bindings/<binding-id>` has a `manifest.json`. The final manifest model separates the upper WoT side from the lower runtime/platform side.
 
-`provides` beschreibt die durch das Binding bereitgestellte WoT-Seite:
+`provides` describes the WoT side provided by the binding:
 
 ```json
 {
@@ -114,7 +114,7 @@ Die Bindings unter `my_runtime/bindings/<binding-id>` besitzen jeweils eine `man
 }
 ```
 
-`requires` beschreibt die Anforderungen an die Host Runtime beziehungsweise Plattform:
+`requires` describes the requirements on the host runtime or platform:
 
 ```json
 {
@@ -139,11 +139,11 @@ Die Bindings unter `my_runtime/bindings/<binding-id>` besitzen jeweils eine `man
 }
 ```
 
-Die Runtime prüft vor dem Laden eines Bindings, ob dessen `requires.interfaces` und `requires.resources` mit den deklarierten `runtimeCapabilities` und dem aktuellen Runtime-Zustand vereinbar sind.
+Before loading a binding, the runtime checks whether its `requires.interfaces` and `requires.resources` are compatible with the declared `runtimeCapabilities` and the current runtime state.
 
 ## 6. Compatibility Check
 
-Ein Binding kann vor dem Laden auf Kompatibilität geprüft werden. Die Action liest und validiert das Manifest, führt aber keinen Entry-Point-Code des Bindings aus.
+A binding can be checked for compatibility before it is loaded. The action reads and validates the manifest but does not execute any entry point code from the binding.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -151,7 +151,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
   --data '{"id":"simple-binding"}'
 ```
 
-Ein kompatibles Binding liefert eine Antwort in dieser Form:
+A compatible binding returns a response in this shape:
 
 ```json
 {
@@ -162,17 +162,17 @@ Ein kompatibles Binding liefert eine Antwort in dieser Form:
 }
 ```
 
-Bei fehlenden Runtime-Interfaces oder Ressourcenkonflikten enthält die Antwort entsprechende Einträge in `missingRequirements` oder `conflicts`.
+If runtime interfaces are missing or resource conflicts exist, the response contains corresponding entries in `missingRequirements` or `conflicts`.
 
-## 7. Example-Binding
+## 7. Example Binding
 
-Das Example-Binding befindet sich unter:
+The Example Binding is located at:
 
 ```text
 my_runtime/bindings/example-binding
 ```
 
-Laden:
+Load it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
@@ -180,14 +180,14 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"example-binding"}'
 ```
 
-Status nach dem Laden:
+Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-Entfernen:
+Remove it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
@@ -195,24 +195,24 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   --data '{"id":"example-binding"}'
 ```
 
-Status nach dem Entfernen:
+Status after removal:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-## 8. CoAP-Binding
+## 8. CoAP Binding
 
-Das CoAP-Binding befindet sich unter:
+The CoAP Binding is located at:
 
 ```text
 my_runtime/bindings/coap-binding
 ```
 
-Das Binding ist als serverseitiger Wrapper für einen verfügbaren CoAP-Protokollstack umgesetzt. Der dynamisch geladene CoAP-Server verwendet Port `5684/udp`.
+The binding is implemented as a server-side wrapper around an available CoAP protocol stack. The dynamically loaded CoAP server uses port `5684/udp`.
 
-Laden:
+Load it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
@@ -220,14 +220,14 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"coap-binding"}'
 ```
 
-Status nach dem Laden:
+Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-Entfernen:
+Remove it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
@@ -235,44 +235,44 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   --data '{"id":"coap-binding"}'
 ```
 
-Status nach dem Entfernen:
+Status after removal:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-### 8.1 CoAP-Zugriff
+### 8.1 CoAP Access
 
-Die folgenden Befehle werden aus `packages/binding-coap` ausgeführt, damit das Paket `coap` aufgelöst werden kann. Der dynamisch geladene CoAP-Server lauscht auf `127.0.0.1:5684`.
+The following commands are run from `packages/binding-coap` so that the `coap` package can be resolved. The dynamically loaded CoAP server listens on `127.0.0.1:5684`.
 
-Status-Property über CoAP:
+Status property over CoAP:
 
 ```bash
 cd packages/binding-coap
 node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:5684/runtime/properties/status'); req.on('response',res=>{let out=''; res.on('data',c=>out+=c); res.on('end',()=>console.log('STATUS:', out));}); req.on('error',err=>console.error('ERROR:', err.message)); req.end();"
 ```
 
-Thing Description über CoAP:
+Thing Description over CoAP:
 
 ```bash
 cd packages/binding-coap
 node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:5684/runtime'); req.setOption('Accept','application/td+json'); req.on('response',res=>{let out=''; res.on('data',c=>out+=c); res.on('end',()=>console.log(out));}); req.on('error',err=>console.error('ERROR:', err.message)); req.end();"
 ```
 
-Nach Entfernen des CoAP-Bindings sollten diese Anfragen nicht mehr erfolgreich beantwortet werden.
+After removing the CoAP Binding, these requests should no longer receive successful responses.
 
-## 9. Simple-Binding
+## 9. Simple Binding
 
-Das Simple-Binding befindet sich unter:
+The Simple Binding is located at:
 
 ```text
 my_runtime/bindings/simple-binding
 ```
 
-Das Binding stellt einen eigenen Client und einen eigenen Server bereit. Der Server verwendet Port `8091/tcp`.
+The binding provides its own client and server. The server uses port `8091/tcp`.
 
-Laden:
+Load it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
@@ -280,44 +280,44 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"simple-binding"}'
 ```
 
-Status nach dem Laden:
+Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-### 9.1 Simple-Server-Zugriff
+### 9.1 Simple Server Access
 
-Thing Description über den Simple-Server:
+Thing Description over the Simple server:
 
 ```bash
 curl http://localhost:8091/runtime
 ```
 
-Status-Property über den Simple-Server:
+Status property over the Simple server:
 
 ```bash
 curl http://localhost:8091/runtime/properties/status
 ```
 
-Registrierte Bindings über den Simple-Server:
+Registered bindings over the Simple server:
 
 ```bash
 curl http://localhost:8091/runtime/properties/registeredBindings
 ```
 
-### 9.2 Simple-Client-Test
+### 9.2 Simple Client Test
 
-Die Datei `my_runtime/simple-client-test.js` verwendet den `SimpleClient` des Bindings und kommuniziert mit der Runtime über `simple://...`.
+The file `my_runtime/simple-client-test.js` uses the binding's `SimpleClient` and communicates with the runtime over `simple://...`.
 
-Standardlauf:
+Default run:
 
 ```bash
 node my_runtime/simple-client-test.js
 ```
 
-Einzelne Testaufrufe:
+Individual test calls:
 
 ```bash
 node my_runtime/simple-client-test.js td
@@ -327,13 +327,13 @@ node my_runtime/simple-client-test.js action addBinding '{"id":"example-binding"
 node my_runtime/simple-client-test.js action removeBinding '{"id":"example-binding"}'
 ```
 
-Anpassung von Host, Port und Thing-Pfad:
+Override host, port, and Thing path:
 
 ```bash
 SIMPLE_HOST=localhost SIMPLE_PORT=8091 SIMPLE_THING=runtime node my_runtime/simple-client-test.js read status
 ```
 
-Entfernen:
+Remove it:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
@@ -341,20 +341,20 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   --data '{"id":"simple-binding"}'
 ```
 
-Status nach dem Entfernen:
+Status after removal:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-Nach Entfernen des Simple-Bindings sollten Anfragen an `http://localhost:8091/...` nicht mehr erfolgreich beantwortet werden.
+After removing the Simple Binding, requests to `http://localhost:8091/...` should no longer receive successful responses.
 
-## 10. Negativtests
+## 10. Negative Tests
 
-### 10.1 Bereits geladenes Binding
+### 10.1 Already Loaded Binding
 
-Wenn `simple-binding` bereits geladen ist, meldet ein erneuter Compatibility Check für dasselbe Binding Konflikte, z.B. das registrierte Scheme `simple` und den belegten Port `8091`.
+If `simple-binding` is already loaded, another compatibility check for the same binding reports conflicts, for example the registered `simple` scheme and the occupied port `8091`.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -362,9 +362,9 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
   --data '{"id":"simple-binding"}'
 ```
 
-### 10.2 Fehlendes Runtime-Interface
+### 10.2 Missing Runtime Interface
 
-Ein Binding-Manifest mit einem nicht verfügbaren Interface führt zu einem fehlenden Requirement. Beispiel:
+A binding manifest with an unavailable interface produces a missing requirement. Example:
 
 ```json
 {
@@ -392,19 +392,19 @@ Ein Binding-Manifest mit einem nicht verfügbaren Interface führt zu einem fehl
 }
 ```
 
-Da die Runtime aktuell kein `message-channel` Interface in `runtimeCapabilities.interfaces` bereitstellt, meldet `checkBindingCompatibility` dieses Requirement als fehlend.
+Because the runtime currently provides no `message-channel` interface in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
 
-### 10.3 Fehlerhafte Binding-Implementierung
+### 10.3 Invalid Binding Implementation
 
-Das Binding `wrong-binding` ist ein absichtlich fehlerhaftes Negativbeispiel unter:
+The `wrong-binding` binding is an intentionally invalid negative example located at:
 
 ```text
 my_runtime/bindings/wrong-binding
 ```
 
-Das Manifest ist formal gültig und beschreibt kompatible Requirements. Der Entry Point liefert jedoch eine ungültige ClientFactory ohne `getClient()`-Methode. Dadurch sollte der Compatibility Check erfolgreich sein, während das tatsächliche Laden über `addBinding` fehlschlägt.
+The manifest is formally valid and describes compatible requirements. However, the entry point returns an invalid ClientFactory without a `getClient()` method. As a result, the compatibility check should succeed, while the actual load through `addBinding` should fail.
 
-Compatibility Check:
+Compatibility check:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -412,7 +412,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
   --data '{"id":"wrong-binding"}'
 ```
 
-Ladeversuch:
+Load attempt:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
@@ -420,15 +420,15 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"wrong-binding"}'
 ```
 
-Erwartete Fehlermeldung:
+Expected error message:
 
 ```text
 Binding 'wrong-binding' returned an invalid client factory.
 ```
 
-## 11. Automatisierte Testausführung
+## 11. Automated Test Execution
 
-Das Skript `my_runtime/run-runtime-tests.sh` führt die dokumentierten Runtime-, Binding- und Negativtests automatisiert aus. Eine laufende Runtime unter `http://localhost:8080` wird vorausgesetzt.
+The script `my_runtime/run-runtime-tests.sh` executes the documented runtime, binding, and negative tests automatically. A running runtime at `http://localhost:8080` is required.
 
 ```bash
 ./my_runtime/run-runtime-tests.sh
