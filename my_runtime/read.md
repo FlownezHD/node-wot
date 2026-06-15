@@ -120,7 +120,8 @@ Each binding below `my_runtime/bindings/<binding-id>` has a `manifest.json`. The
 {
   "interfaces": [
     {
-      "type": "request-response-endpoint",
+      "type": "protocol-stack",
+      "protocol": "http",
       "direction": "server",
       "transport": "tcp",
       "profile": "nodejs-native"
@@ -381,8 +382,11 @@ A binding manifest with an unavailable interface produces a missing requirement.
   "requires": {
     "interfaces": [
       {
-        "type": "message-channel",
-        "direction": "client"
+        "type": "protocol-stack",
+        "protocol": "mqtt",
+        "direction": "client",
+        "transport": "tcp",
+        "profile": "library-backed"
       }
     ],
     "resources": {
@@ -392,7 +396,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
 }
 ```
 
-Because the runtime currently provides no `message-channel` interface in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
+Because the runtime currently provides no `mqtt` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
 
 ### 10.3 Invalid Binding Implementation
 

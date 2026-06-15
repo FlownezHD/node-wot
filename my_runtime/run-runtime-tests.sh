@@ -177,8 +177,11 @@ create_missing_interface_binding() {
     "requires": {
         "interfaces": [
             {
-                "type": "message-channel",
-                "direction": "client"
+                "type": "protocol-stack",
+                "protocol": "mqtt",
+                "direction": "client",
+                "transport": "tcp",
+                "profile": "library-backed"
             }
         ],
         "resources": {
@@ -383,7 +386,7 @@ fi
 
 create_missing_interface_binding
 if run_capture "Compatibility fails for missing-interface-binding" action checkBindingCompatibility '{"id":"missing-interface-binding"}'; then
-    json_assert "missing-interface-binding reports missing message-channel" "$CURRENT_OUTPUT" 'data.compatible === false && data.missingRequirements.some((item) => item.includes("message-channel"))'
+    json_assert "missing-interface-binding reports missing mqtt protocol stack" "$CURRENT_OUTPUT" 'data.compatible === false && data.missingRequirements.some((item) => item.includes("protocol=mqtt"))'
 fi
 remove_missing_interface_binding
 

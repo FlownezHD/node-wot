@@ -12,7 +12,8 @@
     "requires": {
         "interfaces": [
             {
-                "type": "request-response-endpoint",
+                "type": "protocol-stack",
+                "protocol": "http",
                 "direction": "client",
                 "transport": "tcp",
                 "profile": "nodejs-native"

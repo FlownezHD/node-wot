@@ -51,10 +51,8 @@ type WoTInteraction =
     | "unsubscribeEvent";
 
 type DownwardInterfaceType =
-    | "request-response-endpoint"
     | "stream-socket"
     | "datagram-socket"
-    | "message-channel"
     | "protocol-stack";
 
 type TransportType = "tcp" | "udp";
@@ -163,10 +161,8 @@ const validWoTInteractions: WoTInteraction[] = [
     "unsubscribeEvent",
 ];
 const validDownwardInterfaceTypes: DownwardInterfaceType[] = [
-    "request-response-endpoint",
     "stream-socket",
     "datagram-socket",
-    "message-channel",
     "protocol-stack",
 ];
 const validInterfaceDirections: InterfaceDirection[] = ["client", "server", "client-server"];
@@ -180,15 +176,17 @@ const loadedBindings = new Map<string, LoadedBinding>();
 const runtimeCapabilities: RuntimeCapabilities = {
     interfaces: [
         {
-            id: "node-request-response-server",
-            type: "request-response-endpoint",
+            id: "node-http-stack-server",
+            type: "protocol-stack",
+            protocol: "http",
             direction: ["server"],
             transport: "tcp",
             profile: "nodejs-native",
         },
         {
-            id: "node-request-response-client",
-            type: "request-response-endpoint",
+            id: "node-http-stack-client",
+            type: "protocol-stack",
+            protocol: "http",
             direction: ["client"],
             transport: "tcp",
             profile: "nodejs-native",
