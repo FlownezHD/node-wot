@@ -179,9 +179,7 @@ create_missing_interface_binding() {
             {
                 "type": "protocol-stack",
                 "protocol": "mqtt",
-                "direction": "client",
-                "transport": "tcp",
-                "profile": "library-backed"
+                "direction": "client"
             }
         ],
         "resources": {

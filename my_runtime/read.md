@@ -122,9 +122,7 @@ Each binding below `my_runtime/bindings/<binding-id>` has a `manifest.json`. The
     {
       "type": "protocol-stack",
       "protocol": "http",
-      "direction": "server",
-      "transport": "tcp",
-      "profile": "nodejs-native"
+      "direction": "server"
     }
   ],
   "resources": {
@@ -137,6 +135,20 @@ Each binding below `my_runtime/bindings/<binding-id>` has a `manifest.json`. The
       }
     ]
   }
+}
+```
+
+For socket-based bindings, `operations` can optionally specify the required Berkeley-like socket operations:
+
+```json
+{
+  "interfaces": [
+    {
+      "type": "stream-socket",
+      "direction": "client-server",
+      "operations": ["listen", "accept", "connect", "send", "receive", "close"]
+    }
+  ]
 }
 ```
 
@@ -384,9 +396,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
       {
         "type": "protocol-stack",
         "protocol": "mqtt",
-        "direction": "client",
-        "transport": "tcp",
-        "profile": "library-backed"
+        "direction": "client"
       }
     ],
     "resources": {

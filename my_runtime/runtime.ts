@@ -59,14 +59,22 @@ type TransportType = "tcp" | "udp";
 
 type InterfaceDirection = BindingRole | "client-server";
 
-type InterfaceProfile = "berkeley-like" | "library-backed" | "nodejs-native" | "none";
+type DownwardInterfaceOperation =
+    | "listen"
+    | "accept"
+    | "connect"
+    | "send"
+    | "receive"
+    | "bind"
+    | "sendDatagram"
+    | "receiveDatagram"
+    | "close";
 
 type DownwardInterfaceRequirement = {
     type: DownwardInterfaceType;
     direction: InterfaceDirection;
-    transport?: TransportType;
     protocol?: string;
-    profile?: InterfaceProfile;
+    operations?: DownwardInterfaceOperation[];
 };
 
 type PortRequirement = {
@@ -130,9 +138,8 @@ type RuntimeDownwardInterface = {
     id: string;
     type: DownwardInterfaceType;
     direction: InterfaceDirection[];
-    transport?: TransportType;
     protocol?: string;
-    profile?: InterfaceProfile;
+    operations?: DownwardInterfaceOperation[];
 };
 
 type RuntimeCapabilities = {
@@ -166,7 +173,8 @@ const validDownwardInterfaceTypes: DownwardInterfaceType[] = [
     "protocol-stack",
 ];
 const validInterfaceDirections: InterfaceDirection[] = ["client", "server", "client-server"];
-const validInterfaceProfiles: InterfaceProfile[] = ["berkeley-like", "library-backed", "nodejs-native", "none"];
+const validStreamSocketOperations: DownwardInterfaceOperation[] = ["listen", "accept", "connect", "send", "receive", "close"];
+const validDatagramSocketOperations: DownwardInterfaceOperation[] = ["bind", "sendDatagram", "receiveDatagram", "close"];
 
 let runtimeStatus = "running";
 let lastOperation = "Runtime initialized";
@@ -180,38 +188,30 @@ const runtimeCapabilities: RuntimeCapabilities = {
             type: "protocol-stack",
             protocol: "http",
             direction: ["server"],
-            transport: "tcp",
-            profile: "nodejs-native",
         },
         {
             id: "node-http-stack-client",
             type: "protocol-stack",
             protocol: "http",
             direction: ["client"],
-            transport: "tcp",
-            profile: "nodejs-native",
         },
         {
             id: "node-stream-socket",
             type: "stream-socket",
             direction: ["client", "server"],
-            transport: "tcp",
-            profile: "berkeley-like",
+            operations: validStreamSocketOperations,
         },
         {
             id: "node-datagram-socket",
             type: "datagram-socket",
             direction: ["client", "server"],
-            transport: "udp",
-            profile: "berkeley-like",
+            operations: validDatagramSocketOperations,
         },
         {
             id: "node-wot-coap-stack",
             type: "protocol-stack",
             protocol: "coap",
             direction: ["server"],
-            transport: "udp",
-            profile: "library-backed",
         },
     ],
     resourceManagement: {
@@ -312,16 +312,29 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
             throw new Error(`Binding '${manifest.id}' interface requirement ${index} direction must be client, server or client-server.`);
         }
 
-        if (requirement.transport != null && !validTransportTypes.includes(requirement.transport)) {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} transport must be tcp or udp.`);
-        }
-
         if (requirement.protocol != null && typeof requirement.protocol !== "string") {
             throw new Error(`Binding '${manifest.id}' interface requirement ${index} protocol must be a string.`);
         }
 
-        if (requirement.profile != null && !validInterfaceProfiles.includes(requirement.profile)) {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} profile is not supported.`);
+        if (requirement.operations != null) {
+            if (!Array.isArray(requirement.operations)) {
+                throw new Error(`Binding '${manifest.id}' interface requirement ${index} operations must be an array.`);
+            }
+
+            const validOperations = getValidOperationsForInterfaceType(requirement.type);
+            if (validOperations == null) {
+                throw new Error(
+                    `Binding '${manifest.id}' interface requirement ${index} operations are only supported for socket interfaces.`
+                );
+            }
+
+            requirement.operations.forEach((operation, operationIndex) => {
+                if (!validOperations.includes(operation)) {
+                    throw new Error(
+                        `Binding '${manifest.id}' interface requirement ${index} operation ${operationIndex} is not supported for ${requirement.type}.`
+                    );
+                }
+            });
         }
     });
 
@@ -360,21 +373,39 @@ function supportsDirection(runtimeDirections: InterfaceDirection[], requiredDire
     return runtimeDirections.includes(requiredDirection);
 }
 
-function supportsInterfaceProfile(runtimeProfile?: InterfaceProfile, requiredProfile?: InterfaceProfile): boolean {
-    if (requiredProfile == null) {
+function getValidOperationsForInterfaceType(type: DownwardInterfaceType): DownwardInterfaceOperation[] | undefined {
+    if (type === "stream-socket") {
+        return validStreamSocketOperations;
+    }
+
+    if (type === "datagram-socket") {
+        return validDatagramSocketOperations;
+    }
+
+    return undefined;
+}
+
+function supportsOperations(
+    runtimeOperations?: DownwardInterfaceOperation[],
+    requiredOperations?: DownwardInterfaceOperation[]
+): boolean {
+    if (requiredOperations == null || requiredOperations.length === 0) {
         return true;
     }
 
-    return runtimeProfile === requiredProfile;
+    if (runtimeOperations == null) {
+        return false;
+    }
+
+    return requiredOperations.every((operation) => runtimeOperations.includes(operation));
 }
 
 function describeRequirement(requirement: DownwardInterfaceRequirement): string {
     return [
         `type=${requirement.type}`,
-        requirement.transport == null ? undefined : `transport=${requirement.transport}`,
         requirement.protocol == null ? undefined : `protocol=${requirement.protocol}`,
         `direction=${requirement.direction}`,
-        requirement.profile == null ? undefined : `profile=${requirement.profile}`,
+        requirement.operations == null ? undefined : `operations=${requirement.operations.join(",")}`,
     ]
         .filter((part): part is string => part != null)
         .join(" ");
@@ -433,10 +464,6 @@ function checkBindingCompatibility(
                 return false;
             }
 
-            if (requirement.transport != null && runtimeInterface.transport !== requirement.transport) {
-                return false;
-            }
-
             if (requirement.protocol != null && runtimeInterface.protocol !== requirement.protocol) {
                 return false;
             }
@@ -445,7 +472,7 @@ function checkBindingCompatibility(
                 return false;
             }
 
-            return supportsInterfaceProfile(runtimeInterface.profile, requirement.profile);
+            return supportsOperations(runtimeInterface.operations, requirement.operations);
         });
 
         if (matchingInterface == null) {

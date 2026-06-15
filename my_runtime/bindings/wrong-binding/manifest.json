@@ -14,9 +14,7 @@
             {
                 "type": "protocol-stack",
                 "protocol": "http",
-                "direction": "client",
-                "transport": "tcp",
-                "profile": "nodejs-native"
+                "direction": "client"
             }
         ],
         "resources": {
