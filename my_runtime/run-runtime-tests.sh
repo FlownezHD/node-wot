@@ -180,7 +180,7 @@ create_missing_interface_binding() {
         "interfaces": [
             {
                 "type": "protocol-stack",
-                "protocol": "mqtt",
+                "protocol": "amqp",
                 "direction": "client"
             }
         ],
@@ -332,14 +332,14 @@ if run_capture "Read status property" http_get "/runtime/properties/status"; the
     contains_assert "Status indicates running" "$CURRENT_OUTPUT" "running"
 fi
 
-run_capture "Read lastOperation property" http_get "/runtime/properties/lastOperation"
-
 if run_capture "Read registeredBindings property" http_get "/runtime/properties/registeredBindings"; then
     json_assert "registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
 fi
 
 if run_capture "Read runtimeCapabilities property" http_get "/runtime/properties/runtimeCapabilities"; then
     json_assert "runtimeCapabilities exposes interfaces" "$CURRENT_OUTPUT" 'Array.isArray(data.interfaces) && data.interfaces.length > 0'
+    json_assert "runtimeCapabilities exposes supported bindings" "$CURRENT_OUTPUT" 'data.supportedBindings && Array.isArray(data.supportedBindings.activeNative.clients) && Array.isArray(data.supportedBindings.activeNative.servers) && Array.isArray(data.supportedBindings.loaded.clients) && Array.isArray(data.supportedBindings.loaded.servers)'
+    json_assert "runtimeCapabilities exposes active native mqtt client support" "$CURRENT_OUTPUT" 'data.supportedBindings.activeNative.clients.some((client) => client.scheme === "mqtt") && data.interfaces.some((item) => item.type === "protocol-stack" && item.protocol === "mqtt" && item.direction.includes("client"))'
 fi
 
 section "Compatibility Check"
@@ -447,7 +447,7 @@ fi
 
 create_missing_interface_binding
 if run_capture "Compatibility fails for missing-interface-binding" action checkBindingCompatibility '{"id":"missing-interface-binding"}'; then
-    json_assert "missing-interface-binding reports missing mqtt protocol stack" "$CURRENT_OUTPUT" 'data.compatible === false && data.missingRequirements.some((item) => item.includes("protocol=mqtt"))'
+    json_assert "missing-interface-binding reports missing amqp protocol stack" "$CURRENT_OUTPUT" 'data.compatible === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))'
 fi
 remove_missing_interface_binding
 

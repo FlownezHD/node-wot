@@ -85,12 +85,6 @@ Status property:
 curl http://localhost:8080/runtime/properties/status
 ```
 
-Last operation:
-
-```bash
-curl http://localhost:8080/runtime/properties/lastOperation
-```
-
 Registered bindings:
 
 ```bash
@@ -102,6 +96,8 @@ Runtime capabilities:
 ```bash
 curl http://localhost:8080/runtime/properties/runtimeCapabilities
 ```
+
+`runtimeCapabilities.interfaces` contains the host interfaces and active native protocol stacks available to dynamic bindings. `runtimeCapabilities.supportedBindings.activeNative` lists the native node-wot bindings currently registered in the active Servient. `runtimeCapabilities.supportedBindings.loaded` lists the dynamically loaded bindings.
 
 ## 5. Binding Manifest Model
 
@@ -202,7 +198,6 @@ Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
 Remove it:
@@ -217,7 +212,6 @@ Status after removal:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
 ### 7.1 CoAP Access
@@ -262,7 +256,6 @@ Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
 ### 8.1 Simple Server Access
@@ -323,7 +316,6 @@ Status after removal:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
 After removing the Simple Binding, requests to `http://localhost:8091/...` should no longer receive successful responses.
@@ -350,7 +342,6 @@ Status after loading:
 
 ```bash
 curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
 Remove it:
@@ -409,7 +400,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
     "interfaces": [
       {
         "type": "protocol-stack",
-        "protocol": "mqtt",
+        "protocol": "amqp",
         "direction": "client"
       }
     ],
@@ -420,7 +411,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
 }
 ```
 
-Because the runtime currently provides no `mqtt` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
+Because the runtime currently provides no `amqp` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
 
 ### 10.3 Invalid Binding Implementation
 

@@ -24,7 +24,9 @@ type RuntimeServient = {
     addClientFactory(clientFactory: RuntimeClientFactory): void;
     removeClientFactory(scheme: string): boolean;
     hasClientFor(scheme: string): boolean;
+    getClientSchemes(): string[];
     addServer(server: RuntimeServer): boolean;
+    getServers(): RuntimeServer[];
     removeServer(server: RuntimeServer): Promise<boolean>;
 };
 
@@ -134,6 +136,28 @@ type LoadedBinding = {
     entrypointPath: string;
 };
 
+type SupportedBindingClient = {
+    scheme: string;
+    role: "client";
+};
+
+type SupportedBindingServer = {
+    scheme: string;
+    role: "server";
+    port: number;
+    implementation: string;
+};
+
+type SupportedBindingSet = {
+    clients: SupportedBindingClient[];
+    servers: SupportedBindingServer[];
+};
+
+type RuntimeSupportedBindings = {
+    activeNative: SupportedBindingSet;
+    loaded: SupportedBindingSet;
+};
+
 type RuntimeDownwardInterface = {
     id: string;
     type: DownwardInterfaceType;
@@ -144,6 +168,7 @@ type RuntimeDownwardInterface = {
 
 type RuntimeCapabilities = {
     interfaces: RuntimeDownwardInterface[];
+    supportedBindings?: RuntimeSupportedBindings;
     resourceManagement: {
         portCheck: boolean;
         exclusivePortCheck: boolean;
@@ -177,24 +202,11 @@ const validStreamSocketOperations: DownwardInterfaceOperation[] = ["listen", "ac
 const validDatagramSocketOperations: DownwardInterfaceOperation[] = ["bind", "sendDatagram", "receiveDatagram", "close"];
 
 let runtimeStatus = "running";
-let lastOperation = "Runtime initialized";
 let registeredBindings: RuntimeBinding[] = [];
 const loadedBindings = new Map<string, LoadedBinding>();
 
-const runtimeCapabilities: RuntimeCapabilities = {
+const baseRuntimeCapabilities: RuntimeCapabilities = {
     interfaces: [
-        {
-            id: "node-http-stack-server",
-            type: "protocol-stack",
-            protocol: "http",
-            direction: ["server"],
-        },
-        {
-            id: "node-http-stack-client",
-            type: "protocol-stack",
-            protocol: "http",
-            direction: ["client"],
-        },
         {
             id: "node-stream-socket",
             type: "stream-socket",
@@ -206,12 +218,6 @@ const runtimeCapabilities: RuntimeCapabilities = {
             type: "datagram-socket",
             direction: ["client", "server"],
             operations: validDatagramSocketOperations,
-        },
-        {
-            id: "node-wot-coap-stack",
-            type: "protocol-stack",
-            protocol: "coap",
-            direction: ["server"],
         },
     ],
     resourceManagement: {
@@ -444,6 +450,105 @@ function getCurrentRuntimeState(): { usedPorts: UsedPort[]; registeredSchemes: s
     return {
         usedPorts: [...usedPorts.values()],
         registeredSchemes: [...registeredSchemes],
+    };
+}
+
+function getSupportedBindings(servient: RuntimeServient): RuntimeSupportedBindings {
+    const dynamicClientSchemes = new Set<string>();
+    const dynamicServers = new Set<RuntimeServer>();
+
+    loadedBindings.forEach((loadedBinding) => {
+        loadedBinding.clientSchemes.forEach((scheme) => dynamicClientSchemes.add(scheme));
+
+        if (loadedBinding.server != null) {
+            dynamicServers.add(loadedBinding.server);
+        }
+    });
+
+    const activeNativeClients = servient
+        .getClientSchemes()
+        .filter((scheme) => !dynamicClientSchemes.has(scheme))
+        .sort()
+        .map((scheme) => ({
+            scheme,
+            role: "client" as const,
+        }));
+
+    const activeNativeServers = servient
+        .getServers()
+        .filter((server) => !dynamicServers.has(server))
+        .map((server) => ({
+            scheme: server.scheme,
+            role: "server" as const,
+            port: server.getPort(),
+            implementation: server.constructor.name,
+        }))
+        .sort((left, right) => left.scheme.localeCompare(right.scheme));
+
+    const loadedClients: SupportedBindingClient[] = [];
+    const loadedServers: SupportedBindingServer[] = [];
+
+    loadedBindings.forEach((loadedBinding) => {
+        loadedBinding.clientSchemes.forEach((scheme) => {
+            loadedClients.push({
+                scheme,
+                role: "client",
+            });
+        });
+
+        if (loadedBinding.server != null) {
+            loadedServers.push({
+                scheme: loadedBinding.server.scheme,
+                role: "server",
+                port: loadedBinding.server.getPort(),
+                implementation: loadedBinding.server.constructor.name,
+            });
+        }
+    });
+
+    loadedClients.sort((left, right) => left.scheme.localeCompare(right.scheme));
+    loadedServers.sort((left, right) => left.scheme.localeCompare(right.scheme));
+
+    return {
+        activeNative: {
+            clients: activeNativeClients,
+            servers: activeNativeServers,
+        },
+        loaded: {
+            clients: loadedClients,
+            servers: loadedServers,
+        },
+    };
+}
+
+function toActiveNativeProtocolStackInterfaces(supportedBindings: RuntimeSupportedBindings): RuntimeDownwardInterface[] {
+    const interfaces = new Map<string, RuntimeDownwardInterface>();
+
+    function addInterface(scheme: string, direction: BindingRole): void {
+        const key = `protocol-stack:${scheme}:${direction}`;
+
+        if (!interfaces.has(key)) {
+            interfaces.set(key, {
+                id: `active-native-${scheme}-stack-${direction}`,
+                type: "protocol-stack",
+                protocol: scheme,
+                direction: [direction],
+            });
+        }
+    }
+
+    supportedBindings.activeNative.clients.forEach((client) => addInterface(client.scheme, "client"));
+    supportedBindings.activeNative.servers.forEach((server) => addInterface(server.scheme, "server"));
+    return [...interfaces.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function getRuntimeCapabilities(servient: RuntimeServient): RuntimeCapabilities {
+    const supportedBindings = getSupportedBindings(servient);
+
+    return {
+        ...baseRuntimeCapabilities,
+        interfaces: [...baseRuntimeCapabilities.interfaces, ...toActiveNativeProtocolStackInterfaces(supportedBindings)],
+        supportedBindings,
     };
 }
 
@@ -736,12 +841,6 @@ async function main() {
                 observable: true,
                 readOnly: true,
             },
-            lastOperation: {
-                type: "string",
-                description: "Description of the last runtime operation",
-                observable: true,
-                readOnly: true,
-            },
             registeredBindings: {
                 type: "array",
                 description: "Bindings currently known to the runtime",
@@ -872,9 +971,8 @@ async function main() {
     console.log(`Produced ${thing.getThingDescription().title}`);
 
     thing.setPropertyReadHandler("status", async () => runtimeStatus);
-    thing.setPropertyReadHandler("lastOperation", async () => lastOperation);
     thing.setPropertyReadHandler("registeredBindings", async () => registeredBindings);
-    thing.setPropertyReadHandler("runtimeCapabilities", async () => runtimeCapabilities);
+    thing.setPropertyReadHandler("runtimeCapabilities", async () => getRuntimeCapabilities(servient));
 
     thing.setActionHandler("addBinding", async (params?: WoT.InteractionOutput | null) => {
         const input = params == null ? undefined : ((await params.value()) as RuntimeBindingInput);
@@ -889,12 +987,9 @@ async function main() {
 
         try {
             const { manifest } = readBindingManifest(input.id);
-            const compatibility = checkBindingCompatibility(manifest, runtimeCapabilities, getCurrentRuntimeState());
+            const compatibility = checkBindingCompatibility(manifest, getRuntimeCapabilities(servient), getCurrentRuntimeState());
 
             if (!compatibility.compatible) {
-                lastOperation = `Binding '${input.id}' is not compatible`;
-                thing.emitPropertyChange("lastOperation");
-
                 return {
                     result: false,
                     message: `Binding '${input.id}' is not compatible with this runtime.`,
@@ -906,10 +1001,8 @@ async function main() {
             const loadedBinding = await registerBinding(input, servient);
             loadedBindings.set(input.id, loadedBinding);
             registeredBindings = [...registeredBindings, loadedBinding.binding];
-            lastOperation = `Added binding '${input.id}'`;
 
             thing.emitPropertyChange("registeredBindings");
-            thing.emitPropertyChange("lastOperation");
             thing.emitEvent("bindingAdded", { id: input.id });
 
             return {
@@ -917,9 +1010,6 @@ async function main() {
                 message: `Binding '${input.id}' loaded with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
             };
         } catch (error) {
-            lastOperation = `Failed to add binding '${input.id}'`;
-            thing.emitPropertyChange("lastOperation");
-
             return {
                 result: false,
                 message: error instanceof Error ? error.message : `Failed to add binding '${input.id}'.`,
@@ -942,7 +1032,7 @@ async function main() {
 
         try {
             const { manifest } = readBindingManifest(input.id);
-            const compatibility = checkBindingCompatibility(manifest, runtimeCapabilities, getCurrentRuntimeState());
+            const compatibility = checkBindingCompatibility(manifest, getRuntimeCapabilities(servient), getCurrentRuntimeState());
 
             return {
                 id: input.id,
@@ -975,17 +1065,12 @@ async function main() {
             }
 
             registeredBindings = registeredBindings.filter((binding) => binding.id !== input.id);
-            lastOperation = `Removed binding '${input.id}'`;
 
             thing.emitPropertyChange("registeredBindings");
-            thing.emitPropertyChange("lastOperation");
             thing.emitEvent("bindingRemoved", { id: input.id });
 
             return { result: true, message: `Binding '${input.id}' removed from runtime.` };
         } catch (error) {
-            lastOperation = `Failed to remove binding '${input.id}'`;
-            thing.emitPropertyChange("lastOperation");
-
             return {
                 result: false,
                 message: error instanceof Error ? error.message : `Failed to remove binding '${input.id}'.`,

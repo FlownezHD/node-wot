@@ -62,9 +62,6 @@ async function main() {
             const status = await client.readResource({
                 href: `simple://${host}:${port}/${thingPath}/properties/status`
             });
-            const lastOperation = await client.readResource({
-                href: `simple://${host}:${port}/${thingPath}/properties/lastOperation`
-            });
             const registeredBindings = await client.readResource({
                 href: `simple://${host}:${port}/${thingPath}/properties/registeredBindings`
             });
@@ -73,8 +70,6 @@ async function main() {
             console.log(await contentToText(td));
             console.log("\nstatus:");
             console.log(await contentToText(status));
-            console.log("\nlastOperation:");
-            console.log(await contentToText(lastOperation));
             console.log("\nregisteredBindings:");
             console.log(await contentToText(registeredBindings));
             return;
