@@ -15,11 +15,13 @@ This document describes how to operate the runtime prototype in the Eclipse node
 - [8. Simple Binding](#8-simple-binding)
   - [8.1 Simple Server Access](#81-simple-server-access)
   - [8.2 Simple Client Test](#82-simple-client-test)
-- [9. Negative Tests](#9-negative-tests)
-  - [9.1 Already Loaded Binding](#91-already-loaded-binding)
-  - [9.2 Missing Runtime Interface](#92-missing-runtime-interface)
-  - [9.3 Invalid Binding Implementation](#93-invalid-binding-implementation)
-- [10. Automated Test Execution](#10-automated-test-execution)
+- [9. New Raw TCP Binding](#9-new-raw-tcp-binding)
+  - [9.1 Raw TCP Access](#91-raw-tcp-access)
+- [10. Negative Tests](#10-negative-tests)
+  - [10.1 Already Loaded Binding](#101-already-loaded-binding)
+  - [10.2 Missing Runtime Interface](#102-missing-runtime-interface)
+  - [10.3 Invalid Binding Implementation](#103-invalid-binding-implementation)
+- [11. Automated Test Execution](#11-automated-test-execution)
 
 ## 1. Prerequisites
 
@@ -47,6 +49,7 @@ The runtime is started as a WoT script through the node-wot CLI. The repository 
 docker run -it --init \
   -p 8080:8080/tcp \
   -p 8091:8091/tcp \
+  -p 8092:8092/tcp \
   -p 5683:5683/udp \
   -p 5684:5684/udp \
   -e TS_NODE_PROJECT=/workspace/my_runtime/tsconfig.json \
@@ -63,6 +66,7 @@ Relevant startup parameters:
 - `-v "$(pwd):/workspace"`: mounts the local repository into the container
 - `-p 8080:8080/tcp`: HTTP access to the management runtime
 - `-p 8091:8091/tcp`: access to the Simple Binding server
+- `-p 8092:8092/tcp`: access to the New Raw TCP Binding server
 - `-p 5684:5684/udp`: access to the dynamically loaded CoAP server
 
 ## 4. Runtime Endpoints
@@ -324,9 +328,58 @@ curl http://localhost:8080/runtime/properties/lastOperation
 
 After removing the Simple Binding, requests to `http://localhost:8091/...` should no longer receive successful responses.
 
-## 9. Negative Tests
+## 9. New Raw TCP Binding
 
-### 9.1 Already Loaded Binding
+The New Raw TCP Binding is located at:
+
+```text
+my_runtime/bindings/new-binding
+```
+
+The binding provides its own client and server for the `new` scheme. It does not use an existing HTTP, CoAP, or MQTT protocol stack. Instead, it uses a minimal JSON-line protocol over a TCP stream socket. The server uses port `8092/tcp`.
+
+Load it:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"new-binding"}'
+```
+
+Status after loading:
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+curl http://localhost:8080/runtime/properties/lastOperation
+```
+
+Remove it:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"new-binding"}'
+```
+
+### 9.1 Raw TCP Access
+
+Thing Description over the raw TCP protocol:
+
+```bash
+node -e "const net=require('net'); const s=net.connect(8092,'127.0.0.1'); let out=''; s.setEncoding('utf8'); s.on('connect',()=>s.write(JSON.stringify({op:'readThingDescription',path:'runtime'})+'\\n')); s.on('data',c=>{out+=c; const i=out.indexOf('\\n'); if(i>=0){const r=JSON.parse(out.slice(0,i)); console.log(Buffer.from(r.body||'','base64').toString('utf8')); s.end();}});"
+```
+
+Status property over the raw TCP protocol:
+
+```bash
+node -e "const net=require('net'); const s=net.connect(8092,'127.0.0.1'); let out=''; s.setEncoding('utf8'); s.on('connect',()=>s.write(JSON.stringify({op:'readProperty',path:'runtime',name:'status'})+'\\n')); s.on('data',c=>{out+=c; const i=out.indexOf('\\n'); if(i>=0){const r=JSON.parse(out.slice(0,i)); console.log(Buffer.from(r.body||'','base64').toString('utf8')); s.end();}});"
+```
+
+After removing the New Raw TCP Binding, requests to `127.0.0.1:8092` should no longer receive successful responses.
+
+## 10. Negative Tests
+
+### 10.1 Already Loaded Binding
 
 If `simple-binding` is already loaded, another compatibility check for the same binding reports conflicts, for example the registered `simple` scheme and the occupied port `8091`.
 
@@ -336,7 +389,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
   --data '{"id":"simple-binding"}'
 ```
 
-### 9.2 Missing Runtime Interface
+### 10.2 Missing Runtime Interface
 
 A binding manifest with an unavailable interface produces a missing requirement. Example:
 
@@ -369,7 +422,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
 
 Because the runtime currently provides no `mqtt` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
 
-### 9.3 Invalid Binding Implementation
+### 10.3 Invalid Binding Implementation
 
 The `wrong-binding` binding is an intentionally invalid negative example located at:
 
@@ -401,7 +454,7 @@ Expected error message:
 Binding 'wrong-binding' returned an invalid client factory.
 ```
 
-## 10. Automated Test Execution
+## 11. Automated Test Execution
 
 The script `my_runtime/run-runtime-tests.sh` executes the documented runtime, binding, and negative tests automatically. A running runtime at `http://localhost:8080` is required.
 

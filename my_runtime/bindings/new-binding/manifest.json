@@ -1,0 +1,36 @@
+{
+    "id": "new-binding",
+    "name": "New Raw TCP Binding",
+    "version": "1.0.0",
+    "description": "Minimal dynamically loaded binding using a custom raw TCP protocol over stream sockets.",
+    "entrypoint": "./index.js",
+    "provides": {
+        "schemes": ["new"],
+        "roles": ["client", "server"],
+        "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
+    },
+    "requires": {
+        "interfaces": [
+            {
+                "type": "stream-socket",
+                "direction": "server",
+                "operations": ["listen", "accept", "send", "receive", "close"]
+            },
+            {
+                "type": "stream-socket",
+                "direction": "client",
+                "operations": ["connect", "send", "receive", "close"]
+            }
+        ],
+        "resources": {
+            "ports": [
+                {
+                    "transport": "tcp",
+                    "preferred": 8092,
+                    "required": true,
+                    "exclusive": true
+                }
+            ]
+        }
+    }
+}

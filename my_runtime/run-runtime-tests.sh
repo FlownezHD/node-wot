@@ -4,6 +4,8 @@ set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 SIMPLE_BASE_URL="${SIMPLE_BASE_URL:-http://localhost:8091}"
+NEW_HOST="${NEW_HOST:-127.0.0.1}"
+NEW_PORT="${NEW_PORT:-8092}"
 COAP_HOST="${COAP_HOST:-127.0.0.1}"
 COAP_PORT="${COAP_PORT:-5684}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -247,6 +249,53 @@ req.end();
 ')
 }
 
+new_request() {
+    local payload="$1"
+
+    NEW_HOST="$NEW_HOST" NEW_PORT="$NEW_PORT" NEW_PAYLOAD="$payload" node -e '
+const net = require("net");
+const host = process.env.NEW_HOST;
+const port = Number(process.env.NEW_PORT);
+const payload = process.env.NEW_PAYLOAD;
+const socket = net.connect(port, host);
+let out = "";
+
+const timer = setTimeout(() => {
+    console.error("New binding TCP request timed out.");
+    process.exit(1);
+}, 6000);
+
+socket.setEncoding("utf8");
+socket.on("connect", () => {
+    socket.write(`${payload}\n`);
+});
+socket.on("data", (chunk) => {
+    out += chunk;
+    const newlineIndex = out.indexOf("\n");
+
+    if (newlineIndex === -1) {
+        return;
+    }
+
+    clearTimeout(timer);
+    socket.end();
+
+    const response = JSON.parse(out.slice(0, newlineIndex));
+    if (response.ok !== true) {
+        console.error(response.error || "New binding request failed.");
+        process.exit(1);
+    }
+
+    console.log(Buffer.from(response.body || "", "base64").toString("utf8"));
+});
+socket.on("error", (error) => {
+    clearTimeout(timer);
+    console.error(error.message);
+    process.exit(1);
+});
+'
+}
+
 section "Preflight"
 require_command curl
 require_command node
@@ -272,6 +321,7 @@ fi
 section "Initial Cleanup"
 cleanup_binding simple-binding
 cleanup_binding coap-binding
+cleanup_binding new-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
 remove_missing_interface_binding
@@ -295,6 +345,10 @@ fi
 section "Compatibility Check"
 if run_capture "Check simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
     json_assert "simple-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+fi
+
+if run_capture "Check new-binding compatibility" action checkBindingCompatibility '{"id":"new-binding"}'; then
+    json_assert "new-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
 fi
 
 section "CoAP Binding"
@@ -363,6 +417,29 @@ if run_capture "Simple client removes coap-binding" node "$ROOT_DIR/my_runtime/s
     json_assert "Simple client remove coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
+section "New Raw TCP Binding"
+if run_capture "Add new-binding" action addBinding '{"id":"new-binding"}'; then
+    json_assert "new-binding add result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "registeredBindings contains new-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "new-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "new-binding")'
+fi
+
+if run_capture "Read Runtime TD over new raw TCP binding" new_request '{"op":"readThingDescription","path":"runtime"}'; then
+    json_assert "New binding TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
+fi
+
+if run_capture "Read status over new raw TCP binding" new_request '{"op":"readProperty","path":"runtime","name":"status"}'; then
+    contains_assert "New binding status indicates running" "$CURRENT_OUTPUT" "running"
+fi
+
+if run_capture "Remove new-binding" action removeBinding '{"id":"new-binding"}'; then
+    json_assert "new-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+expect_failure "New raw TCP endpoint is unavailable after removal" new_request '{"op":"readProperty","path":"runtime","name":"status"}'
+
 section "Negative Tests"
 if run_capture "Compatibility conflict for already loaded simple-binding" action checkBindingCompatibility '{"id":"simple-binding"}'; then
     json_assert "simple-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
@@ -392,6 +469,7 @@ expect_failure "Simple server is unavailable after removal" simple_get "/runtime
 section "Final Cleanup"
 cleanup_binding simple-binding
 cleanup_binding coap-binding
+cleanup_binding new-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
 remove_missing_interface_binding
