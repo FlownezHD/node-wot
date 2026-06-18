@@ -272,7 +272,6 @@ fi
 section "Initial Cleanup"
 cleanup_binding simple-binding
 cleanup_binding coap-binding
-cleanup_binding example-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
 remove_missing_interface_binding
@@ -296,19 +295,6 @@ fi
 section "Compatibility Check"
 if run_capture "Check simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
     json_assert "simple-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
-fi
-
-section "Example Binding"
-if run_capture "Add example-binding" action addBinding '{"id":"example-binding"}'; then
-    json_assert "example-binding add result is true" "$CURRENT_OUTPUT" 'data.result === true'
-fi
-
-if run_capture "registeredBindings contains example-binding" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "example-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "example-binding")'
-fi
-
-if run_capture "Remove example-binding" action removeBinding '{"id":"example-binding"}'; then
-    json_assert "example-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
 section "CoAP Binding"
@@ -369,12 +355,12 @@ if run_capture "Simple client reads registeredBindings" node "$ROOT_DIR/my_runti
     json_assert "Simple client registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
 fi
 
-if run_capture "Simple client adds example-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action addBinding '{"id":"example-binding"}'; then
-    json_assert "Simple client add example result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Simple client adds coap-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action addBinding '{"id":"coap-binding"}'; then
+    json_assert "Simple client add coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Simple client removes example-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action removeBinding '{"id":"example-binding"}'; then
-    json_assert "Simple client remove example result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Simple client removes coap-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action removeBinding '{"id":"coap-binding"}'; then
+    json_assert "Simple client remove coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
 section "Negative Tests"
@@ -406,7 +392,6 @@ expect_failure "Simple server is unavailable after removal" simple_get "/runtime
 section "Final Cleanup"
 cleanup_binding simple-binding
 cleanup_binding coap-binding
-cleanup_binding example-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
 remove_missing_interface_binding

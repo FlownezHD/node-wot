@@ -10,17 +10,16 @@ This document describes how to operate the runtime prototype in the Eclipse node
 - [4. Runtime Endpoints](#4-runtime-endpoints)
 - [5. Binding Manifest Model](#5-binding-manifest-model)
 - [6. Compatibility Check](#6-compatibility-check)
-- [7. Example Binding](#7-example-binding)
-- [8. CoAP Binding](#8-coap-binding)
-  - [8.1 CoAP Access](#81-coap-access)
-- [9. Simple Binding](#9-simple-binding)
-  - [9.1 Simple Server Access](#91-simple-server-access)
-  - [9.2 Simple Client Test](#92-simple-client-test)
-- [10. Negative Tests](#10-negative-tests)
-  - [10.1 Already Loaded Binding](#101-already-loaded-binding)
-  - [10.2 Missing Runtime Interface](#102-missing-runtime-interface)
-  - [10.3 Invalid Binding Implementation](#103-invalid-binding-implementation)
-- [11. Automated Test Execution](#11-automated-test-execution)
+- [7. CoAP Binding](#7-coap-binding)
+  - [7.1 CoAP Access](#71-coap-access)
+- [8. Simple Binding](#8-simple-binding)
+  - [8.1 Simple Server Access](#81-simple-server-access)
+  - [8.2 Simple Client Test](#82-simple-client-test)
+- [9. Negative Tests](#9-negative-tests)
+  - [9.1 Already Loaded Binding](#91-already-loaded-binding)
+  - [9.2 Missing Runtime Interface](#92-missing-runtime-interface)
+  - [9.3 Invalid Binding Implementation](#93-invalid-binding-implementation)
+- [10. Automated Test Execution](#10-automated-test-execution)
 
 ## 1. Prerequisites
 
@@ -177,45 +176,7 @@ A compatible binding returns a response in this shape:
 
 If runtime interfaces are missing or resource conflicts exist, the response contains corresponding entries in `missingRequirements` or `conflicts`.
 
-## 7. Example Binding
-
-The Example Binding is located at:
-
-```text
-my_runtime/bindings/example-binding
-```
-
-Load it:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"example-binding"}'
-```
-
-Status after loading:
-
-```bash
-curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
-```
-
-Remove it:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"example-binding"}'
-```
-
-Status after removal:
-
-```bash
-curl http://localhost:8080/runtime/properties/registeredBindings
-curl http://localhost:8080/runtime/properties/lastOperation
-```
-
-## 8. CoAP Binding
+## 7. CoAP Binding
 
 The CoAP Binding is located at:
 
@@ -255,7 +216,7 @@ curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-### 8.1 CoAP Access
+### 7.1 CoAP Access
 
 The following commands are run from `packages/binding-coap` so that the `coap` package can be resolved. The dynamically loaded CoAP server listens on `127.0.0.1:5684`.
 
@@ -275,7 +236,7 @@ node -e "const coap=require('coap'); const req=coap.request('coap://127.0.0.1:56
 
 After removing the CoAP Binding, these requests should no longer receive successful responses.
 
-## 9. Simple Binding
+## 8. Simple Binding
 
 The Simple Binding is located at:
 
@@ -300,7 +261,7 @@ curl http://localhost:8080/runtime/properties/registeredBindings
 curl http://localhost:8080/runtime/properties/lastOperation
 ```
 
-### 9.1 Simple Server Access
+### 8.1 Simple Server Access
 
 Thing Description over the Simple server:
 
@@ -320,7 +281,7 @@ Registered bindings over the Simple server:
 curl http://localhost:8091/runtime/properties/registeredBindings
 ```
 
-### 9.2 Simple Client Test
+### 8.2 Simple Client Test
 
 The file `my_runtime/simple-client-test.js` uses the binding's `SimpleClient` and communicates with the runtime over `simple://...`.
 
@@ -336,8 +297,8 @@ Individual test calls:
 node my_runtime/simple-client-test.js td
 node my_runtime/simple-client-test.js read status
 node my_runtime/simple-client-test.js read registeredBindings
-node my_runtime/simple-client-test.js action addBinding '{"id":"example-binding"}'
-node my_runtime/simple-client-test.js action removeBinding '{"id":"example-binding"}'
+node my_runtime/simple-client-test.js action addBinding '{"id":"coap-binding"}'
+node my_runtime/simple-client-test.js action removeBinding '{"id":"coap-binding"}'
 ```
 
 Override host, port, and Thing path:
@@ -363,9 +324,9 @@ curl http://localhost:8080/runtime/properties/lastOperation
 
 After removing the Simple Binding, requests to `http://localhost:8091/...` should no longer receive successful responses.
 
-## 10. Negative Tests
+## 9. Negative Tests
 
-### 10.1 Already Loaded Binding
+### 9.1 Already Loaded Binding
 
 If `simple-binding` is already loaded, another compatibility check for the same binding reports conflicts, for example the registered `simple` scheme and the occupied port `8091`.
 
@@ -375,7 +336,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility 
   --data '{"id":"simple-binding"}'
 ```
 
-### 10.2 Missing Runtime Interface
+### 9.2 Missing Runtime Interface
 
 A binding manifest with an unavailable interface produces a missing requirement. Example:
 
@@ -408,7 +369,7 @@ A binding manifest with an unavailable interface produces a missing requirement.
 
 Because the runtime currently provides no `mqtt` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
 
-### 10.3 Invalid Binding Implementation
+### 9.3 Invalid Binding Implementation
 
 The `wrong-binding` binding is an intentionally invalid negative example located at:
 
@@ -440,7 +401,7 @@ Expected error message:
 Binding 'wrong-binding' returned an invalid client factory.
 ```
 
-## 11. Automated Test Execution
+## 10. Automated Test Execution
 
 The script `my_runtime/run-runtime-tests.sh` executes the documented runtime, binding, and negative tests automatically. A running runtime at `http://localhost:8080` is required.
 

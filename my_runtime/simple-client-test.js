@@ -33,8 +33,8 @@ Examples:
   node my_runtime/simple-client-test.js
   node my_runtime/simple-client-test.js td
   node my_runtime/simple-client-test.js read status
-  node my_runtime/simple-client-test.js action addBinding '{"id":"example-binding"}'
-  node my_runtime/simple-client-test.js action removeBinding '{"id":"example-binding"}'`);
+  node my_runtime/simple-client-test.js action addBinding '{"id":"coap-binding"}'
+  node my_runtime/simple-client-test.js action removeBinding '{"id":"coap-binding"}'`);
 }
 
 async function main() {
@@ -124,7 +124,7 @@ async function main() {
             const rawInput = process.argv[4];
 
             if (!actionName) {
-                throw new Error("Missing action name. Example: action addBinding '{\"id\":\"example-binding\"}'");
+                throw new Error("Missing action name. Example: action addBinding '{\"id\":\"coap-binding\"}'");
             }
 
             const input = rawInput == null ? {} : JSON.parse(rawInput);
