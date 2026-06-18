@@ -138,14 +138,11 @@ type LoadedBinding = {
 
 type SupportedBindingClient = {
     scheme: string;
-    role: "client";
 };
 
 type SupportedBindingServer = {
     scheme: string;
-    role: "server";
     port: number;
-    implementation: string;
 };
 
 type SupportedBindingSet = {
@@ -471,7 +468,6 @@ function getSupportedBindings(servient: RuntimeServient): RuntimeSupportedBindin
         .sort()
         .map((scheme) => ({
             scheme,
-            role: "client" as const,
         }));
 
     const activeNativeServers = servient
@@ -479,9 +475,7 @@ function getSupportedBindings(servient: RuntimeServient): RuntimeSupportedBindin
         .filter((server) => !dynamicServers.has(server))
         .map((server) => ({
             scheme: server.scheme,
-            role: "server" as const,
             port: server.getPort(),
-            implementation: server.constructor.name,
         }))
         .sort((left, right) => left.scheme.localeCompare(right.scheme));
 
@@ -492,16 +486,13 @@ function getSupportedBindings(servient: RuntimeServient): RuntimeSupportedBindin
         loadedBinding.clientSchemes.forEach((scheme) => {
             loadedClients.push({
                 scheme,
-                role: "client",
             });
         });
 
         if (loadedBinding.server != null) {
             loadedServers.push({
                 scheme: loadedBinding.server.scheme,
-                role: "server",
                 port: loadedBinding.server.getPort(),
-                implementation: loadedBinding.server.constructor.name,
             });
         }
     });
