@@ -1,8 +1,12 @@
 "use strict";
 
-const http = require("http");
+const path = require("path");
 
-const port = Number(process.env.BATTERY_PORT || 9101);
+const coap = loadCoapModule();
+
+const port = Number(process.env.BATTERY_COAP_PORT || 5686);
+const bindAddress = process.env.BATTERY_BIND_ADDRESS || "127.0.0.1";
+const publicHost = process.env.BATTERY_HOST || "localhost";
 
 const battery = {
     id: "battery-storage-01",
@@ -16,6 +20,25 @@ const battery = {
     updatedAt: new Date().toISOString()
 };
 
+function loadCoapModule() {
+    const candidates = [
+        "coap",
+        path.resolve(__dirname, "..", "..", "packages", "binding-coap", "node_modules", "coap")
+    ];
+
+    let lastError;
+
+    for (const candidate of candidates) {
+        try {
+            return require(candidate);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw new Error(`Unable to load coap module. Last error: ${lastError.message}`);
+}
+
 function updateBatteryState() {
     const direction = Math.random() > 0.45 ? -1 : 1;
     const delta = Math.random() * 0.18 * direction;
@@ -26,14 +49,14 @@ function updateBatteryState() {
     battery.updatedAt = new Date().toISOString();
 }
 
-function createThingDescription(host) {
-    const base = `http://${host}`;
+function createThingDescription() {
+    const base = `coap://${publicHost}:${port}`;
 
     return {
         "@context": "https://www.w3.org/2022/wot/td/v1.1",
         title: "BatteryStorage01",
         id: "urn:poc:battery-storage:01",
-        description: "Battery storage that is already reachable through an existing HTTP API.",
+        description: "Battery storage exposed as a standard WoT Thing over CoAP.",
         securityDefinitions: {
             nosec_sc: {
                 scheme: "nosec"
@@ -45,18 +68,18 @@ function createThingDescription(host) {
                 type: "number",
                 unit: "percent",
                 readOnly: true,
-                forms: [{ href: `${base}/api/v1/properties/stateOfCharge`, contentType: "application/json" }]
+                forms: [{ href: `${base}/properties/stateOfCharge`, contentType: "application/json", op: ["readproperty"] }]
             },
             powerKw: {
                 type: "number",
                 unit: "kW",
                 readOnly: true,
-                forms: [{ href: `${base}/api/v1/properties/powerKw`, contentType: "application/json" }]
+                forms: [{ href: `${base}/properties/powerKw`, contentType: "application/json", op: ["readproperty"] }]
             },
             mode: {
                 type: "string",
                 readOnly: true,
-                forms: [{ href: `${base}/api/v1/properties/mode`, contentType: "application/json" }]
+                forms: [{ href: `${base}/properties/mode`, contentType: "application/json", op: ["readproperty"] }]
             }
         },
         actions: {
@@ -68,59 +91,61 @@ function createThingDescription(host) {
                     },
                     required: ["mode"]
                 },
-                forms: [{ href: `${base}/api/v1/actions/setMode`, contentType: "application/json" }]
+                forms: [{ href: `${base}/actions/setMode`, contentType: "application/json", op: ["invokeaction"] }]
             }
         }
     };
 }
 
-function handleRequest(req, res) {
+const server = coap.createServer();
+
+server.on("request", (req, res) => {
     updateBatteryState();
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = new URL(req.url, "coap://localhost");
 
     if (req.method === "GET" && url.pathname === "/.well-known/wot-thing-description") {
-        sendJson(res, 200, createThingDescription(req.headers.host));
+        sendJson(res, "2.05", createThingDescription(), "application/td+json");
         return;
     }
 
-    if (req.method === "GET" && url.pathname === "/api/v1/status") {
-        sendJson(res, 200, battery);
+    if (req.method === "GET" && url.pathname === "/status") {
+        sendJson(res, "2.05", battery);
         return;
     }
 
-    if (req.method === "GET" && url.pathname.startsWith("/api/v1/properties/")) {
+    if (req.method === "GET" && url.pathname.startsWith("/properties/")) {
         const propertyName = url.pathname.split("/").pop();
 
         if (Object.prototype.hasOwnProperty.call(battery, propertyName)) {
-            sendJson(res, 200, battery[propertyName]);
+            sendJson(res, "2.05", battery[propertyName]);
             return;
         }
 
-        sendJson(res, 404, { error: `Unknown battery property '${propertyName}'.` });
+        sendJson(res, "4.04", { error: `Unknown battery property '${propertyName}'.` });
         return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/v1/actions/setMode") {
+    if (req.method === "POST" && url.pathname === "/actions/setMode") {
         readJsonBody(req)
             .then((body) => {
                 const allowedModes = new Set(["idle", "charge", "discharge", "grid-support"]);
 
                 if (!allowedModes.has(body.mode)) {
-                    sendJson(res, 400, { error: "mode must be idle, charge, discharge, or grid-support." });
+                    sendJson(res, "4.00", { error: "mode must be idle, charge, discharge, or grid-support." });
                     return;
                 }
 
                 battery.mode = body.mode;
                 battery.updatedAt = new Date().toISOString();
-                sendJson(res, 200, { ok: true, mode: battery.mode });
+                sendJson(res, "2.05", { ok: true, mode: battery.mode });
             })
-            .catch((error) => sendJson(res, 400, { error: error.message }));
+            .catch((error) => sendJson(res, "4.00", { error: error.message }));
         return;
     }
 
-    sendJson(res, 404, { error: "Not found." });
-}
+    sendJson(res, "4.04", { error: "Not found." });
+});
 
 function readJsonBody(req) {
     return new Promise((resolve, reject) => {
@@ -140,14 +165,10 @@ function readJsonBody(req) {
     });
 }
 
-function sendJson(res, statusCode, value) {
-    const body = JSON.stringify(value, null, 2);
-
-    res.writeHead(statusCode, {
-        "content-type": "application/json; charset=utf-8",
-        "content-length": Buffer.byteLength(body)
-    });
-    res.end(body);
+function sendJson(res, code, value, contentFormat = "application/json") {
+    res.code = code;
+    res.setOption("Content-Format", contentFormat);
+    res.end(JSON.stringify(value, null, 2));
 }
 
 function round(value, decimals) {
@@ -159,10 +180,9 @@ function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
-const server = http.createServer(handleRequest);
-
-server.listen(port, () => {
-    console.log(`Battery storage HTTP API listening on http://localhost:${port}`);
+server.listen(port, bindAddress, () => {
+    console.log(`Battery storage CoAP WoT Thing listening on coap://localhost:${port}`);
+    console.log(`Thing Description: coap://localhost:${port}/.well-known/wot-thing-description`);
 });
 
 process.on("SIGINT", () => {

@@ -2,11 +2,11 @@
 
 This directory contains small device simulators for the bachelor thesis demo story:
 
-- A battery storage system with an existing HTTP API.
-- An old electricity meter with an existing HTTP API.
-- A new electricity meter that replaces the old HTTP API and only speaks a proprietary CoAP protocol.
+- A battery storage system exposed as a standard WoT Thing over CoAP.
+- An old electricity meter exposed as a standard WoT Thing over CoAP.
+- A new replacement electricity meter that no longer speaks CoAP and requires the custom `new-binding` raw TCP protocol.
 
-The scripts are intentionally small. They show a possible setup where a central industrial PC runs the WoT runtime from `../my_runtime` and later has to dynamically load a suitable binding.
+The scripts are intentionally small. They show a possible setup where a central industrial PC runs the WoT runtime from `../my_runtime`, first communicates with standard CoAP devices over UDP, and later has to dynamically load `../my_runtime/bindings/new-binding` to communicate with a replacement device over TCP.
 
 ## Start
 
@@ -20,32 +20,31 @@ npm run new-meter --prefix my_presentation
 
 Default ports:
 
-- Battery storage: `http://localhost:9101`
-- Old meter: `http://localhost:9102`
-- New meter: `coap://localhost:5685`
+- Battery storage: `coap://localhost:5686`
+- Old meter: `coap://localhost:5687`
+- New meter: `new://localhost:9103/new-electricity-meter-01`
 
 ## Example Requests
 
 Battery storage:
 
 ```bash
-curl http://localhost:9101/.well-known/wot-thing-description
-curl http://localhost:9101/api/v1/status
-curl http://localhost:9101/api/v1/properties/stateOfCharge
+node -e "const coap=require('./packages/binding-coap/node_modules/coap'); const req=coap.request('coap://localhost:5686/.well-known/wot-thing-description'); req.on('response', r => r.pipe(process.stdout)); req.end();"
+node -e "const coap=require('./packages/binding-coap/node_modules/coap'); const req=coap.request('coap://localhost:5686/properties/stateOfCharge'); req.on('response', r => r.pipe(process.stdout)); req.end();"
 ```
 
-Old HTTP meter:
+Old CoAP meter:
 
 ```bash
-curl http://localhost:9102/.well-known/wot-thing-description
-curl http://localhost:9102/api/v1/meter/reading
-curl http://localhost:9102/api/v1/meter/power
+node -e "const coap=require('./packages/binding-coap/node_modules/coap'); const req=coap.request('coap://localhost:5687/.well-known/wot-thing-description'); req.on('response', r => r.pipe(process.stdout)); req.end();"
+node -e "const coap=require('./packages/binding-coap/node_modules/coap'); const req=coap.request('coap://localhost:5687/properties/reading'); req.on('response', r => r.pipe(process.stdout)); req.end();"
 ```
 
-New proprietary CoAP meter:
+New raw TCP meter:
 
 ```bash
-node -e "const coap=require('coap'); const req=coap.request('coap://localhost:5685/vendor/pm-2000/telemetry'); req.on('response', r => r.pipe(process.stdout)); req.end();"
+node -e "const net=require('net'); const s=net.connect(9103,'localhost',()=>s.write(JSON.stringify({op:'readThingDescription',path:'new-electricity-meter-01'})+'\\n')); s.on('data',d=>{const r=JSON.parse(d); console.log(Buffer.from(r.body,'base64').toString()); s.end();});"
+node -e "const net=require('net'); const s=net.connect(9103,'localhost',()=>s.write(JSON.stringify({op:'readProperty',path:'new-electricity-meter-01',name:'reading'})+'\\n')); s.on('data',d=>{const r=JSON.parse(d); console.log(Buffer.from(r.body,'base64').toString()); s.end();});"
 ```
 
-The new meter deliberately provides no HTTP API and no directly standardized WoT representation. In the proof of concept, the runtime can communicate with this device again only after dynamically loading a suitable binding.
+The replacement meter deliberately provides no CoAP endpoint. In the proof of concept, the runtime can communicate with this device again only after dynamically loading `new-binding`, which adds support for the `new://` TCP protocol.
