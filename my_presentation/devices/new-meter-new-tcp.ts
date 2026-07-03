@@ -1,13 +1,36 @@
-"use strict";
+import net from "net";
 
-const net = require("net");
+type NewMeter = {
+    id: string;
+    manufacturer: string;
+    model: string;
+    serialNumber: string;
+    energyImportKwh: number;
+    energyExportKwh: number;
+    activePowerKw: number;
+    frequencyHz: number;
+    updatedAt: string;
+};
+
+type NewBindingRequest = {
+    op?: string;
+    path?: string;
+    name?: string;
+};
+
+type WireResponse = {
+    ok: boolean;
+    contentType?: string;
+    body?: string;
+    error?: string;
+};
 
 const port = Number(process.env.NEW_METER_NEW_PORT || 9103);
 const bindAddress = process.env.NEW_METER_BIND_ADDRESS || "127.0.0.1";
 const publicHost = process.env.NEW_METER_HOST || "localhost";
 const thingPath = "new-electricity-meter-01";
 
-const meter = {
+const meter: NewMeter = {
     id: "meter-new-01",
     manufacturer: "NextGrid Metering",
     model: "PM-2000",
@@ -16,10 +39,10 @@ const meter = {
     energyExportKwh: 211.54,
     activePowerKw: 12.84,
     frequencyHz: 49.99,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
 };
 
-function updateMeterState() {
+function updateMeterState(): void {
     const activePowerKw = round(9 + Math.random() * 7, 2);
     const elapsedHours = 2 / 3600;
 
@@ -29,7 +52,7 @@ function updateMeterState() {
     meter.updatedAt = new Date().toISOString();
 }
 
-function createThingDescription() {
+function createThingDescription(): Record<string, unknown> {
     const base = `new://${publicHost}:${port}/${thingPath}`;
 
     return {
@@ -39,29 +62,29 @@ function createThingDescription() {
         description: "Replacement electricity meter exposed through the custom raw TCP new-binding protocol.",
         securityDefinitions: {
             nosec_sc: {
-                scheme: "nosec"
-            }
+                scheme: "nosec",
+            },
         },
         security: ["nosec_sc"],
         properties: {
             reading: {
                 type: "object",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/reading`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/reading`, contentType: "application/json", op: ["readproperty"] }],
             },
             activePowerKw: {
                 type: "number",
                 unit: "kW",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/activePowerKw`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/activePowerKw`, contentType: "application/json", op: ["readproperty"] }],
             },
             frequencyHz: {
                 type: "number",
                 unit: "Hz",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/frequencyHz`, contentType: "application/json", op: ["readproperty"] }]
-            }
-        }
+                forms: [{ href: `${base}/properties/frequencyHz`, contentType: "application/json", op: ["readproperty"] }],
+            },
+        },
     };
 }
 
@@ -69,7 +92,7 @@ const server = net.createServer((socket) => {
     void handleSocket(socket);
 });
 
-async function handleSocket(socket) {
+async function handleSocket(socket: net.Socket): Promise<void> {
     try {
         updateMeterState();
 
@@ -83,7 +106,7 @@ async function handleSocket(socket) {
     }
 }
 
-function handleMessage(request) {
+function handleMessage(request: NewBindingRequest): WireResponse {
     if (request.path !== thingPath) {
         return { ok: false, error: "Thing not found." };
     }
@@ -99,7 +122,7 @@ function handleMessage(request) {
                 serialNumber: meter.serialNumber,
                 energyImportKwh: meter.energyImportKwh,
                 energyExportKwh: meter.energyExportKwh,
-                updatedAt: meter.updatedAt
+                updatedAt: meter.updatedAt,
             });
         }
 
@@ -117,12 +140,12 @@ function handleMessage(request) {
     return { ok: false, error: `Unsupported operation '${request.op}'.` };
 }
 
-function readJsonLine(socket) {
+function readJsonLine(socket: net.Socket): Promise<NewBindingRequest> {
     return new Promise((resolve, reject) => {
         let buffer = "";
         let completed = false;
 
-        function finish(line) {
+        function finish(line: string): void {
             if (completed) {
                 return;
             }
@@ -130,7 +153,7 @@ function readJsonLine(socket) {
             completed = true;
 
             try {
-                resolve(JSON.parse(line));
+                resolve(JSON.parse(line) as NewBindingRequest);
             } catch (error) {
                 reject(error);
             }
@@ -156,15 +179,15 @@ function readJsonLine(socket) {
     });
 }
 
-function toWire(value, contentType = "application/json") {
+function toWire(value: unknown, contentType = "application/json"): WireResponse {
     return {
         ok: true,
         contentType,
-        body: Buffer.from(JSON.stringify(value)).toString("base64")
+        body: Buffer.from(JSON.stringify(value)).toString("base64"),
     };
 }
 
-function round(value, decimals) {
+function round(value: number, decimals: number): number {
     const factor = 10 ** decimals;
     return Math.round(value * factor) / factor;
 }

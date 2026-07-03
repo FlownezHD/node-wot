@@ -1,6 +1,47 @@
-"use strict";
+import { createRequire } from "module";
+import path from "path";
+import { Readable } from "stream";
 
-const path = require("path");
+const requireModule = createRequire(__filename);
+
+type CoapRequest = Readable & {
+    method: string;
+    url: string;
+};
+
+type CoapResponse = {
+    code: string;
+    setOption(name: string, value: string): void;
+    end(body: string): void;
+};
+
+type CoapServer = {
+    on(event: "request", handler: (req: CoapRequest, res: CoapResponse) => void): void;
+    listen(port: number, address: string, callback: () => void): void;
+    close(callback: () => void): void;
+};
+
+type CoapModule = {
+    createServer(): CoapServer;
+};
+
+type VoltageReading = {
+    l1: number;
+    l2: number;
+    l3: number;
+};
+
+type OldMeter = {
+    id: string;
+    manufacturer: string;
+    model: string;
+    serialNumber: string;
+    energyImportKwh: number;
+    energyExportKwh: number;
+    activePowerKw: number;
+    voltage: VoltageReading;
+    updatedAt: string;
+};
 
 const coap = loadCoapModule();
 
@@ -8,7 +49,7 @@ const port = Number(process.env.OLD_METER_COAP_PORT || 5687);
 const bindAddress = process.env.OLD_METER_BIND_ADDRESS || "127.0.0.1";
 const publicHost = process.env.OLD_METER_HOST || "localhost";
 
-const meter = {
+const meter: OldMeter = {
     id: "meter-old-01",
     manufacturer: "Legacy Grid Instruments",
     model: "LM-100",
@@ -19,31 +60,32 @@ const meter = {
     voltage: {
         l1: 230.4,
         l2: 229.9,
-        l3: 231.1
+        l3: 231.1,
     },
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
 };
 
-function loadCoapModule() {
+function loadCoapModule(): CoapModule {
     const candidates = [
         "coap",
-        path.resolve(__dirname, "..", "..", "packages", "binding-coap", "node_modules", "coap")
+        path.resolve(__dirname, "..", "..", "packages", "binding-coap", "node_modules", "coap"),
     ];
 
-    let lastError;
+    let lastError: unknown;
 
     for (const candidate of candidates) {
         try {
-            return require(candidate);
+            return requireModule(candidate) as CoapModule;
         } catch (error) {
             lastError = error;
         }
     }
 
-    throw new Error(`Unable to load coap module. Last error: ${lastError.message}`);
+    const message = lastError instanceof Error ? lastError.message : "unknown error";
+    throw new Error(`Unable to load coap module. Last error: ${message}`);
 }
 
-function updateMeterState() {
+function updateMeterState(): void {
     const activePowerKw = 10 + Math.random() * 7;
     const elapsedHours = 2 / 3600;
 
@@ -52,12 +94,12 @@ function updateMeterState() {
     meter.voltage = {
         l1: round(229 + Math.random() * 3, 1),
         l2: round(229 + Math.random() * 3, 1),
-        l3: round(229 + Math.random() * 3, 1)
+        l3: round(229 + Math.random() * 3, 1),
     };
     meter.updatedAt = new Date().toISOString();
 }
 
-function createThingDescription() {
+function createThingDescription(): Record<string, unknown> {
     const base = `coap://${publicHost}:${port}`;
 
     return {
@@ -67,28 +109,28 @@ function createThingDescription() {
         description: "Legacy electricity meter exposed as a standard WoT Thing over CoAP.",
         securityDefinitions: {
             nosec_sc: {
-                scheme: "nosec"
-            }
+                scheme: "nosec",
+            },
         },
         security: ["nosec_sc"],
         properties: {
             reading: {
                 type: "object",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/reading`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/reading`, contentType: "application/json", op: ["readproperty"] }],
             },
             activePowerKw: {
                 type: "number",
                 unit: "kW",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/activePowerKw`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/activePowerKw`, contentType: "application/json", op: ["readproperty"] }],
             },
             voltage: {
                 type: "object",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/voltage`, contentType: "application/json", op: ["readproperty"] }]
-            }
-        }
+                forms: [{ href: `${base}/properties/voltage`, contentType: "application/json", op: ["readproperty"] }],
+            },
+        },
     };
 }
 
@@ -110,7 +152,7 @@ server.on("request", (req, res) => {
             serialNumber: meter.serialNumber,
             energyImportKwh: meter.energyImportKwh,
             energyExportKwh: meter.energyExportKwh,
-            updatedAt: meter.updatedAt
+            updatedAt: meter.updatedAt,
         });
         return;
     }
@@ -133,13 +175,13 @@ server.on("request", (req, res) => {
     sendJson(res, "4.04", { error: "Not found." });
 });
 
-function sendJson(res, code, value, contentFormat = "application/json") {
+function sendJson(res: CoapResponse, code: string, value: unknown, contentFormat = "application/json"): void {
     res.code = code;
     res.setOption("Content-Format", contentFormat);
     res.end(JSON.stringify(value, null, 2));
 }
 
-function round(value, decimals) {
+function round(value: number, decimals: number): number {
     const factor = 10 ** decimals;
     return Math.round(value * factor) / factor;
 }

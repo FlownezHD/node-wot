@@ -1,6 +1,47 @@
-"use strict";
+import { createRequire } from "module";
+import path from "path";
+import { Readable } from "stream";
 
-const path = require("path");
+const requireModule = createRequire(__filename);
+
+type CoapRequest = Readable & {
+    method: string;
+    url: string;
+};
+
+type CoapResponse = {
+    code: string;
+    setOption(name: string, value: string): void;
+    end(body: string): void;
+};
+
+type CoapServer = {
+    on(event: "request", handler: (req: CoapRequest, res: CoapResponse) => void): void;
+    listen(port: number, address: string, callback: () => void): void;
+    close(callback: () => void): void;
+};
+
+type CoapModule = {
+    createServer(): CoapServer;
+};
+
+type BatteryMode = "idle" | "charge" | "discharge" | "grid-support";
+
+type BatteryStorage = {
+    id: string;
+    manufacturer: string;
+    model: string;
+    stateOfCharge: number;
+    powerKw: number;
+    capacityKwh: number;
+    mode: BatteryMode;
+    temperatureCelsius: number;
+    updatedAt: string;
+};
+
+type SetModeInput = {
+    mode?: BatteryMode;
+};
 
 const coap = loadCoapModule();
 
@@ -8,7 +49,7 @@ const port = Number(process.env.BATTERY_COAP_PORT || 5686);
 const bindAddress = process.env.BATTERY_BIND_ADDRESS || "127.0.0.1";
 const publicHost = process.env.BATTERY_HOST || "localhost";
 
-const battery = {
+const battery: BatteryStorage = {
     id: "battery-storage-01",
     manufacturer: "OpenEMS Demo Systems",
     model: "BS-50K",
@@ -17,29 +58,30 @@ const battery = {
     capacityKwh: 50,
     mode: "grid-support",
     temperatureCelsius: 28.1,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
 };
 
-function loadCoapModule() {
+function loadCoapModule(): CoapModule {
     const candidates = [
         "coap",
-        path.resolve(__dirname, "..", "..", "packages", "binding-coap", "node_modules", "coap")
+        path.resolve(__dirname, "..", "..", "packages", "binding-coap", "node_modules", "coap"),
     ];
 
-    let lastError;
+    let lastError: unknown;
 
     for (const candidate of candidates) {
         try {
-            return require(candidate);
+            return requireModule(candidate) as CoapModule;
         } catch (error) {
             lastError = error;
         }
     }
 
-    throw new Error(`Unable to load coap module. Last error: ${lastError.message}`);
+    const message = lastError instanceof Error ? lastError.message : "unknown error";
+    throw new Error(`Unable to load coap module. Last error: ${message}`);
 }
 
-function updateBatteryState() {
+function updateBatteryState(): void {
     const direction = Math.random() > 0.45 ? -1 : 1;
     const delta = Math.random() * 0.18 * direction;
 
@@ -49,7 +91,7 @@ function updateBatteryState() {
     battery.updatedAt = new Date().toISOString();
 }
 
-function createThingDescription() {
+function createThingDescription(): Record<string, unknown> {
     const base = `coap://${publicHost}:${port}`;
 
     return {
@@ -59,8 +101,8 @@ function createThingDescription() {
         description: "Battery storage exposed as a standard WoT Thing over CoAP.",
         securityDefinitions: {
             nosec_sc: {
-                scheme: "nosec"
-            }
+                scheme: "nosec",
+            },
         },
         security: ["nosec_sc"],
         properties: {
@@ -68,32 +110,32 @@ function createThingDescription() {
                 type: "number",
                 unit: "percent",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/stateOfCharge`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/stateOfCharge`, contentType: "application/json", op: ["readproperty"] }],
             },
             powerKw: {
                 type: "number",
                 unit: "kW",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/powerKw`, contentType: "application/json", op: ["readproperty"] }]
+                forms: [{ href: `${base}/properties/powerKw`, contentType: "application/json", op: ["readproperty"] }],
             },
             mode: {
                 type: "string",
                 readOnly: true,
-                forms: [{ href: `${base}/properties/mode`, contentType: "application/json", op: ["readproperty"] }]
-            }
+                forms: [{ href: `${base}/properties/mode`, contentType: "application/json", op: ["readproperty"] }],
+            },
         },
         actions: {
             setMode: {
                 input: {
                     type: "object",
                     properties: {
-                        mode: { type: "string", enum: ["idle", "charge", "discharge", "grid-support"] }
+                        mode: { type: "string", enum: ["idle", "charge", "discharge", "grid-support"] },
                     },
-                    required: ["mode"]
+                    required: ["mode"],
                 },
-                forms: [{ href: `${base}/actions/setMode`, contentType: "application/json", op: ["invokeaction"] }]
-            }
-        }
+                forms: [{ href: `${base}/actions/setMode`, contentType: "application/json", op: ["invokeaction"] }],
+            },
+        },
     };
 }
 
@@ -117,8 +159,8 @@ server.on("request", (req, res) => {
     if (req.method === "GET" && url.pathname.startsWith("/properties/")) {
         const propertyName = url.pathname.split("/").pop();
 
-        if (Object.prototype.hasOwnProperty.call(battery, propertyName)) {
-            sendJson(res, "2.05", battery[propertyName]);
+        if (propertyName != null && Object.prototype.hasOwnProperty.call(battery, propertyName)) {
+            sendJson(res, "2.05", (battery as Record<string, unknown>)[propertyName]);
             return;
         }
 
@@ -127,11 +169,11 @@ server.on("request", (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/actions/setMode") {
-        readJsonBody(req)
+        readJsonBody<SetModeInput>(req)
             .then((body) => {
-                const allowedModes = new Set(["idle", "charge", "discharge", "grid-support"]);
+                const allowedModes = new Set<BatteryMode>(["idle", "charge", "discharge", "grid-support"]);
 
-                if (!allowedModes.has(body.mode)) {
+                if (body.mode == null || !allowedModes.has(body.mode)) {
                     sendJson(res, "4.00", { error: "mode must be idle, charge, discharge, or grid-support." });
                     return;
                 }
@@ -140,24 +182,24 @@ server.on("request", (req, res) => {
                 battery.updatedAt = new Date().toISOString();
                 sendJson(res, "2.05", { ok: true, mode: battery.mode });
             })
-            .catch((error) => sendJson(res, "4.00", { error: error.message }));
+            .catch((error: unknown) => sendJson(res, "4.00", { error: error instanceof Error ? error.message : "Invalid request." }));
         return;
     }
 
     sendJson(res, "4.04", { error: "Not found." });
 });
 
-function readJsonBody(req) {
+function readJsonBody<T>(req: Readable): Promise<T> {
     return new Promise((resolve, reject) => {
         let data = "";
 
-        req.on("data", (chunk) => {
-            data += chunk;
+        req.on("data", (chunk: Buffer | string) => {
+            data += chunk.toString();
         });
         req.on("end", () => {
             try {
-                resolve(data.length === 0 ? {} : JSON.parse(data));
-            } catch (error) {
+                resolve((data.length === 0 ? {} : JSON.parse(data)) as T);
+            } catch {
                 reject(new Error("Invalid JSON request body."));
             }
         });
@@ -165,18 +207,18 @@ function readJsonBody(req) {
     });
 }
 
-function sendJson(res, code, value, contentFormat = "application/json") {
+function sendJson(res: CoapResponse, code: string, value: unknown, contentFormat = "application/json"): void {
     res.code = code;
     res.setOption("Content-Format", contentFormat);
     res.end(JSON.stringify(value, null, 2));
 }
 
-function round(value, decimals) {
+function round(value: number, decimals: number): number {
     const factor = 10 ** decimals;
     return Math.round(value * factor) / factor;
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
 }
 

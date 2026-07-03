@@ -1,15 +1,17 @@
 {
     "extends": "../tsconfig.json",
     "compilerOptions": {
-        "outDir": "../dist/my_runtime",
         "module": "Node16",
-        "rootDir": ".",
+        "rootDir": "..",
         "target": "ES2021",
         "resolveJsonModule": true,
         "sourceMap": false,
         "removeComments": false,
         "types": ["node", "wot-typescript-definitions"]
     },
-    "include": ["./**/*"],
+    "include": [
+        "./**/*",
+        "../my_runtime/**/*.ts"
+    ],
     "references": []
 }

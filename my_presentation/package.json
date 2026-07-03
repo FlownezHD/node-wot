@@ -3,9 +3,10 @@
     "name": "dynamic-binding-poc",
     "description": "Small presentation scenario for dynamic WoT protocol binding loading.",
     "scripts": {
-        "battery": "node devices/battery-storage-coap.js",
-        "old-meter": "node devices/old-meter-coap.js",
-        "new-meter": "node devices/new-meter-new-tcp.js"
+        "battery": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/battery-storage-coap.ts",
+        "old-meter": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/old-meter-coap.ts",
+        "new-meter": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/new-meter-new-tcp.ts",
+        "runtime": "TS_NODE_PROJECT=tsconfig.json TS_NODE_FILES=true node ../packages/cli/bin/index.js ../my_runtime/runtime.ts energy-demo-runtime.ts"
     },
     "dependencies": {
         "coap": "^1.4.1"
