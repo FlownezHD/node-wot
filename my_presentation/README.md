@@ -24,6 +24,14 @@ Start the shared-Servient runtime after the devices are running:
 npm run runtime --prefix my_presentation
 ```
 
+Optionally start the visualizer in another terminal:
+
+```bash
+npm run visualizer --prefix my_presentation
+```
+
+Open: <http://localhost:9200>
+
 This starts two WoT Things in the same node-wot process:
 
 - `Runtime` from `../my_runtime/runtime.ts`
@@ -34,6 +42,7 @@ Default ports:
 - Battery storage: `coap://localhost:5686`
 - Old meter: `coap://localhost:5687`
 - New meter: `new://localhost:9103/new-electricity-meter-01`
+- Visualizer: `http://localhost:9200`
 
 ## Runtime-Mediated Demo
 

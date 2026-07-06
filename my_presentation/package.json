@@ -6,7 +6,8 @@
         "battery": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/battery-storage-coap.ts",
         "old-meter": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/old-meter-coap.ts",
         "new-meter": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register devices/new-meter-new-tcp.ts",
-        "runtime": "TS_NODE_PROJECT=tsconfig.json TS_NODE_FILES=true node ../packages/cli/bin/index.js ../my_runtime/runtime.ts energy-demo-runtime.ts"
+        "runtime": "TS_NODE_PROJECT=tsconfig.json TS_NODE_FILES=true node ../packages/cli/bin/index.js ../my_runtime/runtime.ts energy-demo-runtime.ts",
+        "visualizer": "TS_NODE_PROJECT=tsconfig.json node -r ts-node/register visualisation/visualizer-server.ts"
     },
     "dependencies": {
         "coap": "^1.4.1"
