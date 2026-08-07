@@ -1,4 +1,5 @@
 import { existsSync } from "fs";
+import { mkdir, rename, rm, writeFile } from "fs/promises";
 import path from "path";
 
 //smallest form of an ClientFactory
@@ -39,6 +40,11 @@ type RuntimeBinding = {
 
 type RuntimeBindingInput = {
     id: string;
+};
+
+type DeployBindingInput = {
+    manifest: RuntimeBindingManifest;
+    source: string;
 };
 
 type BindingRole = "client" | "server";
@@ -197,6 +203,8 @@ const validDownwardInterfaceTypes: DownwardInterfaceType[] = [
 const validInterfaceDirections: InterfaceDirection[] = ["client", "server", "client-server"];
 const validStreamSocketOperations: DownwardInterfaceOperation[] = ["listen", "accept", "connect", "send", "receive", "close"];
 const validDatagramSocketOperations: DownwardInterfaceOperation[] = ["bind", "sendDatagram", "receiveDatagram", "close"];
+const bindingIdPattern = /^[a-z0-9][a-z0-9-]*$/;
+const deployedBindingEntrypoints = new Set(["index.js", "./index.js"]);
 
 let runtimeStatus = "running";
 let registeredBindings: RuntimeBinding[] = [];
@@ -238,21 +246,111 @@ function getServient(): RuntimeServient {
     return context.servient;
 }
 
-//search for the binding path
-function resolveBindingBasePath(bindingId: string): string {
-    const candidates = [
+function validateBindingId(bindingId: string): void {
+    if (!bindingIdPattern.test(bindingId)) {
+        throw new Error("Binding id must contain only lowercase letters, numbers and hyphens.");
+    }
+}
+
+function getDeployedBindingsRoot(): string {
+    return path.resolve(__dirname, "deployed-bindings");
+}
+
+function getDeployedBindingPath(bindingId: string): string {
+    validateBindingId(bindingId);
+    return path.join(getDeployedBindingsRoot(), bindingId);
+}
+
+function getBundledBindingCandidates(bindingId: string): string[] {
+    validateBindingId(bindingId);
+
+    return [
         path.resolve(__dirname, "bindings", bindingId),
         path.resolve(process.cwd(), "my_runtime", "bindings", bindingId),
         path.resolve(process.cwd(), "dist", "my_runtime", "bindings", bindingId),
     ];
+}
+
+// Search both the runtime-managed deployment store and the bundled examples.
+function resolveBindingBasePath(bindingId: string): string {
+    const candidates = [getDeployedBindingPath(bindingId), ...getBundledBindingCandidates(bindingId)];
 
     const bindingBasePath = candidates.find((candidate) => existsSync(candidate));
 
     if (bindingBasePath == null) {
-        throw new Error(`Binding '${bindingId}' was not found under my_runtime/bindings or dist/my_runtime/bindings.`);
+        throw new Error(
+            `Binding '${bindingId}' was not found in the deployment store, my_runtime/bindings or dist/my_runtime/bindings.`
+        );
     }
 
     return bindingBasePath;
+}
+
+function validateDeployBindingInput(input: DeployBindingInput | undefined): asserts input is DeployBindingInput {
+    if (input == null || typeof input !== "object") {
+        throw new Error("Deployment input must be an object.");
+    }
+
+    if (input.manifest == null || typeof input.manifest !== "object") {
+        throw new Error("Deployment input must contain a binding manifest.");
+    }
+
+    validateBindingManifest(input.manifest);
+    validateBindingId(input.manifest.id);
+
+    if (!deployedBindingEntrypoints.has(input.manifest.entrypoint)) {
+        throw new Error("Deployed bindings must use index.js as their entrypoint.");
+    }
+
+    if (typeof input.source !== "string" || input.source.length === 0) {
+        throw new Error("Deployment input must contain non-empty JavaScript source code.");
+    }
+
+}
+
+function bundledBindingExists(bindingId: string): boolean {
+    return getBundledBindingCandidates(bindingId).some((candidate) => existsSync(candidate));
+}
+
+async function installDeployedBinding(manifest: RuntimeBindingManifest, source: string): Promise<string> {
+    const deploymentRoot = getDeployedBindingsRoot();
+    const bindingPath = getDeployedBindingPath(manifest.id);
+    const temporaryPath = path.join(deploymentRoot, `.${manifest.id}-${process.pid}-${Date.now()}.tmp`);
+
+    await mkdir(deploymentRoot, { recursive: true });
+    await mkdir(temporaryPath);
+
+    try {
+        await writeFile(path.join(temporaryPath, "manifest.json"), `${JSON.stringify(manifest, null, 4)}\n`, "utf8");
+        await writeFile(path.join(temporaryPath, "index.js"), inputSourceWithTrailingNewline(source), "utf8");
+
+        if (existsSync(bindingPath)) {
+            throw new Error(`Binding '${manifest.id}' is already deployed.`);
+        }
+
+        await rename(temporaryPath, bindingPath);
+        return bindingPath;
+    } catch (error) {
+        await rm(temporaryPath, { recursive: true, force: true });
+        throw error;
+    }
+}
+
+function inputSourceWithTrailingNewline(source: string): string {
+    return source.endsWith("\n") ? source : `${source}\n`;
+}
+
+async function deleteDeployedBindingFiles(bindingId: string): Promise<boolean> {
+    const bindingPath = getDeployedBindingPath(bindingId);
+
+    if (!existsSync(bindingPath)) {
+        return false;
+    }
+
+    clearModuleCache(path.join(bindingPath, "index.js"));
+    clearModuleCache(path.join(bindingPath, "manifest.json"));
+    await rm(bindingPath, { recursive: true });
+    return true;
 }
 
 function validateBindingManifest(manifest: RuntimeBindingManifest): void {
@@ -860,6 +958,40 @@ async function main() {
             },
         },
         actions: {
+            deployBinding: {
+                description: "Transfer, validate and load a single-file binding in the active runtime",
+                input: {
+                    type: "object",
+                    properties: {
+                        manifest: {
+                            type: "object",
+                        },
+                        source: {
+                            type: "string",
+                        },
+                    },
+                    required: ["manifest", "source"],
+                },
+                output: {
+                    type: "object",
+                    properties: {
+                        result: {
+                            type: "boolean",
+                        },
+                        message: {
+                            type: "string",
+                        },
+                        missingRequirements: {
+                            type: "array",
+                            items: { type: "string" },
+                        },
+                        conflicts: {
+                            type: "array",
+                            items: { type: "string" },
+                        },
+                    },
+                },
+            },
             addBinding: {
                 description: "Load and register a binding in the active runtime",
                 input: {
@@ -948,13 +1080,42 @@ async function main() {
                     },
                 },
             },
+            deleteBinding: {
+                description: "Delete an unloaded binding previously installed through deployBinding",
+                input: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                        },
+                    },
+                    required: ["id"],
+                },
+                output: {
+                    type: "object",
+                    properties: {
+                        result: {
+                            type: "boolean",
+                        },
+                        message: {
+                            type: "string",
+                        },
+                    },
+                },
+            },
         },
         events: {
+            bindingDeployed: {
+                description: "Emitted when a transferred binding was installed and loaded",
+            },
             bindingAdded: {
                 description: "Emitted when a binding was added to the runtime",
             },
             bindingRemoved: {
                 description: "Emitted when a binding was removed from the runtime",
+            },
+            bindingDeleted: {
+                description: "Emitted when a deployed binding was deleted from runtime storage",
             },
         },
     });
@@ -964,6 +1125,76 @@ async function main() {
     thing.setPropertyReadHandler("status", async () => runtimeStatus);
     thing.setPropertyReadHandler("registeredBindings", async () => registeredBindings);
     thing.setPropertyReadHandler("runtimeCapabilities", async () => getRuntimeCapabilities(servient));
+
+    thing.setActionHandler("deployBinding", async (params?: WoT.InteractionOutput | null) => {
+        const input = params == null ? undefined : ((await params.value()) as DeployBindingInput);
+        let deploymentInstalled = false;
+        let bindingId = "";
+
+        try {
+            validateDeployBindingInput(input);
+            bindingId = input.manifest.id;
+
+            if (loadedBindings.has(bindingId)) {
+                return { result: false, message: `Binding '${bindingId}' is already loaded.` };
+            }
+
+            if (bundledBindingExists(bindingId)) {
+                return {
+                    result: false,
+                    message: `Binding '${bindingId}' is bundled with the runtime and cannot be replaced through deployBinding.`,
+                };
+            }
+
+            if (existsSync(getDeployedBindingPath(bindingId))) {
+                return { result: false, message: `Binding '${bindingId}' is already deployed.` };
+            }
+
+            const compatibility = checkBindingCompatibility(
+                input.manifest,
+                getRuntimeCapabilities(servient),
+                getCurrentRuntimeState()
+            );
+
+            if (!compatibility.compatible) {
+                return {
+                    result: false,
+                    message: `Binding '${bindingId}' is not compatible with this runtime.`,
+                    missingRequirements: compatibility.missingRequirements,
+                    conflicts: compatibility.conflicts,
+                };
+            }
+
+            await installDeployedBinding(input.manifest, input.source);
+            deploymentInstalled = true;
+
+            const loadedBinding = await registerBinding({ id: bindingId }, servient);
+            loadedBindings.set(bindingId, loadedBinding);
+            registeredBindings = [...registeredBindings, loadedBinding.binding];
+
+            thing.emitPropertyChange("registeredBindings");
+            thing.emitEvent("bindingDeployed", { id: bindingId });
+            thing.emitEvent("bindingAdded", { id: bindingId });
+
+            return {
+                result: true,
+                message: `Binding '${bindingId}' deployed and loaded with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
+            };
+        } catch (error) {
+            if (deploymentInstalled && bindingId.length > 0) {
+                try {
+                    await deleteDeployedBindingFiles(bindingId);
+                } catch {
+                    // Preserve the original deployment error in the WoT action response.
+                }
+            }
+
+            return {
+                result: false,
+                message: error instanceof Error ? error.message : "Failed to deploy binding.",
+            };
+        }
+    });
 
     thing.setActionHandler("addBinding", async (params?: WoT.InteractionOutput | null) => {
         const input = params == null ? undefined : ((await params.value()) as RuntimeBindingInput);
@@ -978,7 +1209,11 @@ async function main() {
 
         try {
             const { manifest } = readBindingManifest(input.id);
-            const compatibility = checkBindingCompatibility(manifest, getRuntimeCapabilities(servient), getCurrentRuntimeState());
+            const compatibility = checkBindingCompatibility(
+                manifest,
+                getRuntimeCapabilities(servient),
+                getCurrentRuntimeState()
+            );
 
             if (!compatibility.compatible) {
                 return {
@@ -1023,7 +1258,11 @@ async function main() {
 
         try {
             const { manifest } = readBindingManifest(input.id);
-            const compatibility = checkBindingCompatibility(manifest, getRuntimeCapabilities(servient), getCurrentRuntimeState());
+            const compatibility = checkBindingCompatibility(
+                manifest,
+                getRuntimeCapabilities(servient),
+                getCurrentRuntimeState()
+            );
 
             return {
                 id: input.id,
@@ -1035,7 +1274,9 @@ async function main() {
             return {
                 id: input.id,
                 compatible: false,
-                missingRequirements: [error instanceof Error ? error.message : `Failed to check binding '${input.id}'.`],
+                missingRequirements: [
+                    error instanceof Error ? error.message : `Failed to check binding '${input.id}'.`,
+                ],
                 conflicts: [],
             };
         }
@@ -1065,6 +1306,42 @@ async function main() {
             return {
                 result: false,
                 message: error instanceof Error ? error.message : `Failed to remove binding '${input.id}'.`,
+            };
+        }
+    });
+
+    thing.setActionHandler("deleteBinding", async (params?: WoT.InteractionOutput | null) => {
+        const input = params == null ? undefined : ((await params.value()) as RuntimeBindingInput);
+
+        if (typeof input?.id !== "string" || input.id.length === 0) {
+            return { result: false, message: "Binding id is required." };
+        }
+
+        try {
+            validateBindingId(input.id);
+
+            if (!existsSync(getDeployedBindingPath(input.id))) {
+                return {
+                    result: false,
+                    message: `Binding '${input.id}' was not deployed through deployBinding and cannot be deleted.`,
+                };
+            }
+
+            if (loadedBindings.has(input.id)) {
+                return {
+                    result: false,
+                    message: `Binding '${input.id}' is currently loaded. Remove it before deleting it.`,
+                };
+            }
+
+            await deleteDeployedBindingFiles(input.id);
+            thing.emitEvent("bindingDeleted", { id: input.id });
+
+            return { result: true, message: `Deployed binding '${input.id}' deleted from runtime storage.` };
+        } catch (error) {
+            return {
+                result: false,
+                message: error instanceof Error ? error.message : `Failed to delete binding '${input.id}'.`,
             };
         }
     });

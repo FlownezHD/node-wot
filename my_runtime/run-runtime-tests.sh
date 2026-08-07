@@ -10,6 +10,8 @@ COAP_HOST="${COAP_HOST:-127.0.0.1}"
 COAP_PORT="${COAP_PORT:-5684}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MISSING_BINDING_DIR="$ROOT_DIR/my_runtime/bindings/missing-interface-binding"
+DEPLOYMENT_EXAMPLE_DIR="$ROOT_DIR/my_runtime/deployable-bindings/deployed-example-binding"
+DEPLOYMENT_EXAMPLE_ID="deployed-example-binding"
 
 cd "$ROOT_DIR"
 
@@ -160,6 +162,23 @@ contains_assert() {
 cleanup_binding() {
     local binding_id="$1"
     action removeBinding "{\"id\":\"$binding_id\"}" >/dev/null 2>&1 || true
+}
+
+cleanup_deployed_binding() {
+    local binding_id="$1"
+    cleanup_binding "$binding_id"
+    action deleteBinding "{\"id\":\"$binding_id\"}" >/dev/null 2>&1 || true
+}
+
+create_deployment_payload() {
+    DEPLOYMENT_EXAMPLE_DIR="$DEPLOYMENT_EXAMPLE_DIR" node -e '
+const fs = require("fs");
+const path = require("path");
+const basePath = process.env.DEPLOYMENT_EXAMPLE_DIR;
+const manifest = JSON.parse(fs.readFileSync(path.join(basePath, "manifest.json"), "utf8"));
+const source = fs.readFileSync(path.join(basePath, "index.js"), "utf8");
+process.stdout.write(JSON.stringify({ manifest, source }));
+'
 }
 
 create_missing_interface_binding() {
@@ -314,7 +333,7 @@ fi
 
 if [[ "$FAIL_COUNT" -gt "$RUNTIME_REACHABILITY_FAILED" ]]; then
     printf "\nRuntime is not reachable or does not expose the expected TD at %s/runtime.\n" "$BASE_URL"
-    printf "Start the runtime first with the docker command documented in my_runtime/read.md, then run this script again.\n"
+    printf "Start the runtime first with the docker command documented in my_runtime/README.md, then run this script again.\n"
     exit 1
 fi
 
@@ -324,6 +343,7 @@ cleanup_binding coap-binding
 cleanup_binding new-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
+cleanup_deployed_binding "$DEPLOYMENT_EXAMPLE_ID"
 remove_missing_interface_binding
 pass "Best-effort cleanup completed"
 
@@ -349,6 +369,51 @@ fi
 
 if run_capture "Check new-binding compatibility" action checkBindingCompatibility '{"id":"new-binding"}'; then
     json_assert "new-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+fi
+
+section "WoT Binding Deployment"
+if run_capture "Create deployment payload from example files" create_deployment_payload; then
+    DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+
+    if run_capture "Deploy and load transferred binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+        json_assert "deployBinding result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    fi
+fi
+
+if run_capture "registeredBindings contains deployed example" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "deployed example is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "deployed-example-binding")'
+fi
+
+if run_capture "Reject deletion while deployed binding is loaded" action deleteBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "loaded deployed binding must be removed before deletion" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("currently loaded")'
+fi
+
+if run_capture "Remove deployed example binding" action removeBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "deployed example remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "registeredBindings excludes removed deployed example" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "removed deployed example is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "deployed-example-binding")'
+fi
+
+if run_capture "Reload deployed example with addBinding" action addBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "deployed example reload result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "Remove reloaded deployed example binding" action removeBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "reloaded deployed example remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "Delete deployed example binding" action deleteBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "deployed example delete result is true" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "Loading deleted deployed example fails" action addBinding '{"id":"deployed-example-binding"}'; then
+    json_assert "deleted deployed example is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+fi
+
+if run_capture "Reject deletion of bundled simple-binding" action deleteBinding '{"id":"simple-binding"}'; then
+    json_assert "bundled binding cannot be deleted" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not deployed through deployBinding")'
 fi
 
 section "CoAP Binding"
@@ -472,6 +537,7 @@ cleanup_binding coap-binding
 cleanup_binding new-binding
 cleanup_binding wrong-binding
 cleanup_binding missing-interface-binding
+cleanup_deployed_binding "$DEPLOYMENT_EXAMPLE_ID"
 remove_missing_interface_binding
 pass "Final cleanup completed"
 

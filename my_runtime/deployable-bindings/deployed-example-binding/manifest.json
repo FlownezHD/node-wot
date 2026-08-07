@@ -1,0 +1,24 @@
+{
+    "id": "deployed-example-binding",
+    "name": "Deployed Example Binding",
+    "version": "1.0.0",
+    "description": "Minimal client binding used to demonstrate transfer and lifecycle management through WoT.",
+    "entrypoint": "./index.js",
+    "provides": {
+        "schemes": ["deployed-example"],
+        "roles": ["client"],
+        "interactions": []
+    },
+    "requires": {
+        "interfaces": [
+            {
+                "type": "stream-socket",
+                "direction": "client",
+                "operations": ["connect", "send", "receive", "close"]
+            }
+        ],
+        "resources": {
+            "ports": []
+        }
+    }
+}
