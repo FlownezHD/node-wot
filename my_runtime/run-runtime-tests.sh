@@ -185,25 +185,30 @@ process.stdout.write(JSON.stringify({ manifest, source }));
 '
 }
 
-create_missing_interface_payload() {
-    node -e '
+create_negative_deployment_payload() {
+    local scenario="$1"
+
+    NEGATIVE_SCENARIO="$scenario" node -e '
+const scenario = process.env.NEGATIVE_SCENARIO;
+const id = `${scenario}-binding`;
+const scheme = `negative-${scenario}`;
 const manifest = {
-    id: "missing-interface-binding",
-    name: "Missing Interface Binding",
+    id,
+    name: `Negative ${scenario} Binding`,
     version: "1.0.0",
-    description: "Negative compatibility test.",
+    description: `Negative deployment test for ${scenario}.`,
     entrypoint: "./index.js",
     provides: {
-        schemes: ["missing"],
+        schemes: [scheme],
         roles: ["client"],
         interactions: ["readThingDescription"]
     },
     requires: {
         interfaces: [
             {
-                type: "protocol-stack",
-                protocol: "amqp",
-                direction: "client"
+                type: "stream-socket",
+                direction: "client",
+                operations: ["connect", "close"]
             }
         ],
         resources: {
@@ -211,11 +216,69 @@ const manifest = {
         }
     }
 };
-const source = `"use strict";
-module.exports.createBinding = () => ({ id: "missing-interface-binding" });
+
+let source = `"use strict";
+class TestClientFactory {
+    constructor() { this.scheme = ${JSON.stringify(scheme)}; }
+    getClient() { return {}; }
+    init() { return true; }
+    destroy() { return true; }
+}
+module.exports.createBinding = () => ({
+    id: ${JSON.stringify(id)},
+    createClientFactory: () => new TestClientFactory()
+});
 `;
+
+if (scenario === "manifest-string") {
+    process.stdout.write(JSON.stringify({ manifest: JSON.stringify(manifest), source }));
+    process.exit(0);
+}
+
+if (scenario === "empty-source") {
+    source = "";
+} else if (scenario === "invalid-id") {
+    manifest.id = "../invalid-binding";
+} else if (scenario === "invalid-interface") {
+    manifest.requires.interfaces[0].type = "invalid-interface";
+} else if (scenario === "invalid-entrypoint") {
+    manifest.entrypoint = "../index.js";
+} else if (scenario === "missing-interface") {
+    manifest.requires.interfaces = [{ type: "protocol-stack", protocol: "amqp", direction: "client" }];
+} else if (scenario === "scheme-conflict") {
+    manifest.provides.schemes = ["simple"];
+} else if (scenario === "port-conflict") {
+    manifest.requires.resources.ports = [{ transport: "tcp", preferred: 8091, required: true, exclusive: true }];
+} else if (scenario === "syntax-error") {
+    source = "module.exports = {";
+} else if (scenario === "missing-export") {
+    source = "module.exports = {};";
+} else if (scenario === "id-mismatch") {
+    source = `module.exports.createBinding = () => ({ id: "different-binding" });`;
+}
+
 process.stdout.write(JSON.stringify({ manifest, source }));
 '
+}
+
+test_rejected_deployment() {
+    local scenario="$1"
+    local binding_id="$2"
+    local rejection_expression="$3"
+    local description="$4"
+    local payload
+
+    if run_capture "Create $description payload" create_negative_deployment_payload "$scenario"; then
+        payload="$CURRENT_OUTPUT"
+
+        if run_capture "Reject $description" action deployBinding "$payload"; then
+            json_assert "$description is rejected" "$CURRENT_OUTPUT" "$rejection_expression"
+        fi
+    fi
+
+    if [[ -n "$binding_id" ]] && run_capture "Check $description left no deployable binding" action addBinding "{\"id\":\"$binding_id\"}"; then
+        json_assert "$description leaves no deployment artifact" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+    fi
 }
 
 coap_request() {
@@ -333,6 +396,15 @@ cleanup_deployed_binding coap-binding
 cleanup_deployed_binding new-binding
 cleanup_deployed_binding wrong-binding
 cleanup_deployed_binding missing-interface-binding
+cleanup_deployed_binding manifest-string-binding
+cleanup_deployed_binding empty-source-binding
+cleanup_deployed_binding invalid-interface-binding
+cleanup_deployed_binding invalid-entrypoint-binding
+cleanup_deployed_binding scheme-conflict-binding
+cleanup_deployed_binding port-conflict-binding
+cleanup_deployed_binding syntax-error-binding
+cleanup_deployed_binding missing-export-binding
+cleanup_deployed_binding id-mismatch-binding
 pass "Best-effort cleanup completed"
 
 section "Runtime Properties"
@@ -377,6 +449,10 @@ fi
 
 if run_capture "registeredBindings excludes removed simple-binding" http_get "/runtime/properties/registeredBindings"; then
     json_assert "removed simple-binding is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+fi
+
+if run_capture "Reject duplicate deployment of installed simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+    json_assert "duplicate deployment is rejected without replacing installed files" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("already deployed")'
 fi
 
 if run_capture "Check installed simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
@@ -500,18 +576,85 @@ fi
 
 expect_failure "New raw TCP endpoint is unavailable after removal" new_request '{"op":"readProperty","path":"runtime","name":"status"}'
 
-section "Negative Tests"
+section "Negative Deployment Input Validation"
+if run_capture "Create string-encoded manifest payload" create_negative_deployment_payload manifest-string; then
+    MANIFEST_STRING_PAYLOAD="$CURRENT_OUTPUT"
+
+    expect_failure "Reject string-encoded manifest at WoT input validation" \
+        action deployBinding "$MANIFEST_STRING_PAYLOAD"
+fi
+
+if run_capture "Check string-encoded manifest left no deployable binding" \
+    action addBinding '{"id":"manifest-string-binding"}'; then
+    json_assert "string-encoded manifest leaves no deployment artifact" "$CURRENT_OUTPUT" \
+        'data.result === false && data.message.includes("was not found")'
+fi
+
+test_rejected_deployment \
+    empty-source \
+    empty-source-binding \
+    'data.result === false && data.message.includes("non-empty JavaScript source")' \
+    "empty binding source"
+
+test_rejected_deployment \
+    invalid-id \
+    "" \
+    'data.result === false && data.message.includes("only lowercase letters, numbers and hyphens")' \
+    "invalid binding id"
+
+test_rejected_deployment \
+    invalid-interface \
+    invalid-interface-binding \
+    'data.result === false && data.message.includes("type is not supported")' \
+    "unsupported interface type"
+
+test_rejected_deployment \
+    invalid-entrypoint \
+    invalid-entrypoint-binding \
+    'data.result === false && data.message.includes("must use index.js")' \
+    "unsafe binding entrypoint"
+
+section "Negative Deployment Compatibility"
 if run_capture "Compatibility conflict for already loaded simple-binding" action checkBindingCompatibility '{"id":"simple-binding"}'; then
     json_assert "simple-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
 fi
 
-if run_capture "Create missing-interface deployment payload" create_missing_interface_payload; then
-    MISSING_INTERFACE_PAYLOAD="$CURRENT_OUTPUT"
+test_rejected_deployment \
+    missing-interface \
+    missing-interface-binding \
+    'data.result === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))' \
+    "missing protocol-stack requirement"
 
-    if run_capture "Deployment fails for missing-interface-binding" action deployBinding "$MISSING_INTERFACE_PAYLOAD"; then
-        json_assert "missing-interface-binding reports missing amqp protocol stack" "$CURRENT_OUTPUT" 'data.result === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))'
-    fi
-fi
+test_rejected_deployment \
+    scheme-conflict \
+    scheme-conflict-binding \
+    'data.result === false && data.conflicts.some((item) => item.includes("Scheme") && item.includes("simple"))' \
+    "conflicting URI scheme"
+
+test_rejected_deployment \
+    port-conflict \
+    port-conflict-binding \
+    'data.result === false && data.conflicts.some((item) => item.includes("Port 8091"))' \
+    "conflicting required port"
+
+section "Negative Module Loading and Rollback"
+test_rejected_deployment \
+    syntax-error \
+    syntax-error-binding \
+    'data.result === false && typeof data.message === "string" && data.message.length > 0' \
+    "syntactically invalid entrypoint"
+
+test_rejected_deployment \
+    missing-export \
+    missing-export-binding \
+    'data.result === false && data.message.includes("does not export createBinding")' \
+    "missing createBinding export"
+
+test_rejected_deployment \
+    id-mismatch \
+    id-mismatch-binding \
+    'data.result === false && data.message.includes("does not match requested id")' \
+    "mismatching entrypoint binding id"
 
 if run_capture "Create wrong-binding deployment payload" create_deployment_payload wrong-binding; then
     WRONG_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
@@ -538,6 +681,15 @@ cleanup_deployed_binding coap-binding
 cleanup_deployed_binding new-binding
 cleanup_deployed_binding wrong-binding
 cleanup_deployed_binding missing-interface-binding
+cleanup_deployed_binding manifest-string-binding
+cleanup_deployed_binding empty-source-binding
+cleanup_deployed_binding invalid-interface-binding
+cleanup_deployed_binding invalid-entrypoint-binding
+cleanup_deployed_binding scheme-conflict-binding
+cleanup_deployed_binding port-conflict-binding
+cleanup_deployed_binding syntax-error-binding
+cleanup_deployed_binding missing-export-binding
+cleanup_deployed_binding id-mismatch-binding
 pass "Final cleanup completed"
 
 section "Summary"

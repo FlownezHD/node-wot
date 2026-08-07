@@ -313,6 +313,51 @@ This binding provides a custom `new` scheme over a minimal JSON-line protocol on
 
 Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/new-binding"`.
 
+After a successful deployment, read the Runtime Thing's `status` property through the dynamically loaded Raw TCP Binding:
+
+```bash
+node -e '
+const net = require("net");
+const socket = net.connect(8092, "127.0.0.1");
+let response = "";
+
+socket.setEncoding("utf8");
+socket.on("connect", () => {
+  socket.write(JSON.stringify({
+    op: "readProperty",
+    path: "runtime",
+    name: "status"
+  }) + "\n");
+});
+socket.on("data", chunk => {
+  response += chunk;
+  const newline = response.indexOf("\n");
+  if (newline === -1) return;
+
+  const result = JSON.parse(response.slice(0, newline));
+  socket.end();
+
+  if (result.ok !== true) {
+    throw new Error(result.error || "Request failed");
+  }
+
+  console.log(Buffer.from(result.body || "", "base64").toString("utf8"));
+});
+socket.on("error", error => {
+  console.error(error.message);
+  process.exitCode = 1;
+});
+'
+```
+
+Expected output:
+
+```text
+"running"
+```
+
+This confirms that the binding is not only registered in the Servient but also accepts and processes requests through the custom `new://` protocol.
+
 Remove:
 
 ```bash
