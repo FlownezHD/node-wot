@@ -3,15 +3,15 @@
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
-SIMPLE_BASE_URL="${SIMPLE_BASE_URL:-http://localhost:8091}"
+SIMPLE_HOST="${SIMPLE_HOST:-127.0.0.1}"
+SIMPLE_PORT="${SIMPLE_PORT:-8091}"
+SIMPLE_BASE_URL="${SIMPLE_BASE_URL:-http://$SIMPLE_HOST:$SIMPLE_PORT}"
 NEW_HOST="${NEW_HOST:-127.0.0.1}"
 NEW_PORT="${NEW_PORT:-8092}"
 COAP_HOST="${COAP_HOST:-127.0.0.1}"
 COAP_PORT="${COAP_PORT:-5684}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MISSING_BINDING_DIR="$ROOT_DIR/my_runtime/bindings/missing-interface-binding"
-DEPLOYMENT_EXAMPLE_DIR="$ROOT_DIR/my_runtime/deployable-bindings/deployed-example-binding"
-DEPLOYMENT_EXAMPLE_ID="deployed-example-binding"
+BINDINGS_DIR="$ROOT_DIR/my_bindings"
 
 cd "$ROOT_DIR"
 
@@ -19,6 +19,8 @@ PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
 CURRENT_OUTPUT=""
+
+export SIMPLE_HOST SIMPLE_PORT
 
 green=$'\033[32m'
 red=$'\033[31m'
@@ -171,61 +173,49 @@ cleanup_deployed_binding() {
 }
 
 create_deployment_payload() {
-    DEPLOYMENT_EXAMPLE_DIR="$DEPLOYMENT_EXAMPLE_DIR" node -e '
+    local binding_id="$1"
+
+    BINDING_DIR="$BINDINGS_DIR/$binding_id" node -e '
 const fs = require("fs");
 const path = require("path");
-const basePath = process.env.DEPLOYMENT_EXAMPLE_DIR;
+const basePath = process.env.BINDING_DIR;
 const manifest = JSON.parse(fs.readFileSync(path.join(basePath, "manifest.json"), "utf8"));
 const source = fs.readFileSync(path.join(basePath, "index.js"), "utf8");
 process.stdout.write(JSON.stringify({ manifest, source }));
 '
 }
 
-create_missing_interface_binding() {
-    mkdir -p "$MISSING_BINDING_DIR"
-    cat > "$MISSING_BINDING_DIR/manifest.json" <<'JSON'
-{
-    "id": "missing-interface-binding",
-    "name": "Missing Interface Binding",
-    "version": "1.0.0",
-    "description": "Negative compatibility test.",
-    "entrypoint": "./index.js",
-    "provides": {
-        "schemes": ["missing"],
-        "roles": ["client"],
-        "interactions": ["readThingDescription"]
+create_missing_interface_payload() {
+    node -e '
+const manifest = {
+    id: "missing-interface-binding",
+    name: "Missing Interface Binding",
+    version: "1.0.0",
+    description: "Negative compatibility test.",
+    entrypoint: "./index.js",
+    provides: {
+        schemes: ["missing"],
+        roles: ["client"],
+        interactions: ["readThingDescription"]
     },
-    "requires": {
-        "interfaces": [
+    requires: {
+        interfaces: [
             {
-                "type": "protocol-stack",
-                "protocol": "amqp",
-                "direction": "client"
+                type: "protocol-stack",
+                protocol: "amqp",
+                direction: "client"
             }
         ],
-        "resources": {
-            "ports": []
+        resources: {
+            ports: []
         }
     }
-}
-JSON
-    cat > "$MISSING_BINDING_DIR/index.js" <<'JS'
-"use strict";
-
-function createBinding() {
-    return {
-        id: "missing-interface-binding"
-    };
-}
-
-module.exports = {
-    createBinding
 };
-JS
-}
-
-remove_missing_interface_binding() {
-    rm -rf "$MISSING_BINDING_DIR"
+const source = `"use strict";
+module.exports.createBinding = () => ({ id: "missing-interface-binding" });
+`;
+process.stdout.write(JSON.stringify({ manifest, source }));
+'
 }
 
 coap_request() {
@@ -338,13 +328,11 @@ if [[ "$FAIL_COUNT" -gt "$RUNTIME_REACHABILITY_FAILED" ]]; then
 fi
 
 section "Initial Cleanup"
-cleanup_binding simple-binding
-cleanup_binding coap-binding
-cleanup_binding new-binding
-cleanup_binding wrong-binding
-cleanup_binding missing-interface-binding
-cleanup_deployed_binding "$DEPLOYMENT_EXAMPLE_ID"
-remove_missing_interface_binding
+cleanup_deployed_binding simple-binding
+cleanup_deployed_binding coap-binding
+cleanup_deployed_binding new-binding
+cleanup_deployed_binding wrong-binding
+cleanup_deployed_binding missing-interface-binding
 pass "Best-effort cleanup completed"
 
 section "Runtime Properties"
@@ -362,63 +350,62 @@ if run_capture "Read runtimeCapabilities property" http_get "/runtime/properties
     json_assert "runtimeCapabilities exposes active native mqtt client support" "$CURRENT_OUTPUT" 'data.supportedBindings.activeNative.clients.some((client) => client.scheme === "mqtt") && data.interfaces.some((item) => item.type === "protocol-stack" && item.protocol === "mqtt" && item.direction.includes("client"))'
 fi
 
-section "Compatibility Check"
-if run_capture "Check simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
-    json_assert "simple-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
-fi
-
-if run_capture "Check new-binding compatibility" action checkBindingCompatibility '{"id":"new-binding"}'; then
-    json_assert "new-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
-fi
-
 section "WoT Binding Deployment"
-if run_capture "Create deployment payload from example files" create_deployment_payload; then
+if run_capture "Loading simple-binding before deployment fails" action addBinding '{"id":"simple-binding"}'; then
+    json_assert "simple-binding is initially absent from runtime storage" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+fi
+
+if run_capture "Create simple-binding deployment payload" create_deployment_payload simple-binding; then
     DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
 
-    if run_capture "Deploy and load transferred binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+    if run_capture "Deploy and load transferred simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
         json_assert "deployBinding result is true" "$CURRENT_OUTPUT" 'data.result === true'
     fi
 fi
 
-if run_capture "registeredBindings contains deployed example" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "deployed example is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "deployed-example-binding")'
+if run_capture "registeredBindings contains deployed simple-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "deployed simple-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding")'
 fi
 
-if run_capture "Reject deletion while deployed binding is loaded" action deleteBinding '{"id":"deployed-example-binding"}'; then
+if run_capture "Reject deletion while deployed binding is loaded" action deleteBinding '{"id":"simple-binding"}'; then
     json_assert "loaded deployed binding must be removed before deletion" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("currently loaded")'
 fi
 
-if run_capture "Remove deployed example binding" action removeBinding '{"id":"deployed-example-binding"}'; then
-    json_assert "deployed example remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Remove deployed simple-binding" action removeBinding '{"id":"simple-binding"}'; then
+    json_assert "deployed simple-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "registeredBindings excludes removed deployed example" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "removed deployed example is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "deployed-example-binding")'
+if run_capture "registeredBindings excludes removed simple-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "removed simple-binding is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
 fi
 
-if run_capture "Reload deployed example with addBinding" action addBinding '{"id":"deployed-example-binding"}'; then
-    json_assert "deployed example reload result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Check installed simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
+    json_assert "installed simple-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
 fi
 
-if run_capture "Remove reloaded deployed example binding" action removeBinding '{"id":"deployed-example-binding"}'; then
-    json_assert "reloaded deployed example remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Reload deployed simple-binding with addBinding" action addBinding '{"id":"simple-binding"}'; then
+    json_assert "deployed simple-binding reload result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Delete deployed example binding" action deleteBinding '{"id":"deployed-example-binding"}'; then
-    json_assert "deployed example delete result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Remove reloaded simple-binding" action removeBinding '{"id":"simple-binding"}'; then
+    json_assert "reloaded simple-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Loading deleted deployed example fails" action addBinding '{"id":"deployed-example-binding"}'; then
-    json_assert "deleted deployed example is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+if run_capture "Delete deployed simple-binding" action deleteBinding '{"id":"simple-binding"}'; then
+    json_assert "deployed simple-binding delete result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Reject deletion of bundled simple-binding" action deleteBinding '{"id":"simple-binding"}'; then
-    json_assert "bundled binding cannot be deleted" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not deployed through deployBinding")'
+if run_capture "Loading deleted simple-binding fails" action addBinding '{"id":"simple-binding"}'; then
+    json_assert "deleted simple-binding is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
 fi
 
 section "CoAP Binding"
-if run_capture "Add coap-binding" action addBinding '{"id":"coap-binding"}'; then
-    json_assert "coap-binding add result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Create coap-binding deployment payload" create_deployment_payload coap-binding; then
+    COAP_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+
+    if run_capture "Deploy coap-binding" action deployBinding "$COAP_DEPLOYMENT_PAYLOAD"; then
+        json_assert "coap-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    fi
 fi
 
 if run_capture "registeredBindings contains coap-binding" http_get "/runtime/properties/registeredBindings"; then
@@ -440,8 +427,12 @@ fi
 expect_failure "CoAP endpoint is unavailable after removal" coap_request "coap://$COAP_HOST:$COAP_PORT/runtime/properties/status"
 
 section "Simple Binding"
-if run_capture "Add simple-binding" action addBinding '{"id":"simple-binding"}'; then
-    json_assert "simple-binding add result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Create simple-binding deployment payload" create_deployment_payload simple-binding; then
+    SIMPLE_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+
+    if run_capture "Deploy simple-binding" action deployBinding "$SIMPLE_DEPLOYMENT_PAYLOAD"; then
+        json_assert "simple-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    fi
 fi
 
 if run_capture "registeredBindings contains simple-binding" http_get "/runtime/properties/registeredBindings"; then
@@ -483,8 +474,12 @@ if run_capture "Simple client removes coap-binding" node "$ROOT_DIR/my_runtime/s
 fi
 
 section "New Raw TCP Binding"
-if run_capture "Add new-binding" action addBinding '{"id":"new-binding"}'; then
-    json_assert "new-binding add result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Create new-binding deployment payload" create_deployment_payload new-binding; then
+    NEW_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+
+    if run_capture "Deploy new-binding" action deployBinding "$NEW_DEPLOYMENT_PAYLOAD"; then
+        json_assert "new-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    fi
 fi
 
 if run_capture "registeredBindings contains new-binding" http_get "/runtime/properties/registeredBindings"; then
@@ -510,18 +505,24 @@ if run_capture "Compatibility conflict for already loaded simple-binding" action
     json_assert "simple-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
 fi
 
-create_missing_interface_binding
-if run_capture "Compatibility fails for missing-interface-binding" action checkBindingCompatibility '{"id":"missing-interface-binding"}'; then
-    json_assert "missing-interface-binding reports missing amqp protocol stack" "$CURRENT_OUTPUT" 'data.compatible === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))'
-fi
-remove_missing_interface_binding
+if run_capture "Create missing-interface deployment payload" create_missing_interface_payload; then
+    MISSING_INTERFACE_PAYLOAD="$CURRENT_OUTPUT"
 
-if run_capture "wrong-binding compatibility is initially valid" action checkBindingCompatibility '{"id":"wrong-binding"}'; then
-    json_assert "wrong-binding compatibility result is true" "$CURRENT_OUTPUT" 'data.compatible === true'
+    if run_capture "Deployment fails for missing-interface-binding" action deployBinding "$MISSING_INTERFACE_PAYLOAD"; then
+        json_assert "missing-interface-binding reports missing amqp protocol stack" "$CURRENT_OUTPUT" 'data.result === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))'
+    fi
 fi
 
-if run_capture "wrong-binding add request fails by validation" action addBinding '{"id":"wrong-binding"}'; then
-    json_assert "wrong-binding reports invalid client factory" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("invalid client factory")'
+if run_capture "Create wrong-binding deployment payload" create_deployment_payload wrong-binding; then
+    WRONG_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+
+    if run_capture "wrong-binding deployment fails by validation" action deployBinding "$WRONG_DEPLOYMENT_PAYLOAD"; then
+        json_assert "wrong-binding reports invalid client factory" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("invalid client factory")'
+    fi
+fi
+
+if run_capture "Failed wrong-binding deployment is rolled back" action addBinding '{"id":"wrong-binding"}'; then
+    json_assert "wrong-binding is absent after rollback" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
 fi
 
 section "Simple Binding Cleanup"
@@ -532,13 +533,11 @@ fi
 expect_failure "Simple server is unavailable after removal" simple_get "/runtime/properties/status"
 
 section "Final Cleanup"
-cleanup_binding simple-binding
-cleanup_binding coap-binding
-cleanup_binding new-binding
-cleanup_binding wrong-binding
-cleanup_binding missing-interface-binding
-cleanup_deployed_binding "$DEPLOYMENT_EXAMPLE_ID"
-remove_missing_interface_binding
+cleanup_deployed_binding simple-binding
+cleanup_deployed_binding coap-binding
+cleanup_deployed_binding new-binding
+cleanup_deployed_binding wrong-binding
+cleanup_deployed_binding missing-interface-binding
 pass "Final cleanup completed"
 
 section "Summary"

@@ -2,7 +2,7 @@
 
 const path = require("path");
 
-const bindingPath = path.resolve(__dirname, "bindings", "simple-binding", "index.js");
+const bindingPath = path.resolve(__dirname, "..", "my_bindings", "simple-binding", "index.js");
 const { createBinding } = require(bindingPath);
 
 function createJsonContent(value) {

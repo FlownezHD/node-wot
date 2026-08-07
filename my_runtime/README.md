@@ -16,7 +16,6 @@ This directory contains the WoT runtime prototype for the dynamic protocol bindi
   - [7.1 CoAP Binding](#71-coap-binding)
   - [7.2 Simple Binding](#72-simple-binding)
   - [7.3 New Raw TCP Binding](#73-new-raw-tcp-binding)
-  - [7.4 Deployable Example Binding](#74-deployable-example-binding)
 - [8. Negative Tests](#8-negative-tests)
   - [8.1 Already Loaded Binding](#81-already-loaded-binding)
   - [8.2 Missing Runtime Interface](#82-missing-runtime-interface)
@@ -28,13 +27,12 @@ This directory contains the WoT runtime prototype for the dynamic protocol bindi
 The prototype consists of:
 
 - `runtime.ts`: the management runtime exposed as the WoT Thing `Runtime`
-- `bindings/*`: bindings bundled with the runtime and dynamically loadable by ID
-- `deployable-bindings/*`: example packages that must be transferred through the `deployBinding` WoT action
-- `deployed-bindings/*`: runtime-managed storage for transferred bindings
+- `../my_bindings/*`: protocol binding packages located on the sender side
+- `deployed-bindings/*`: runtime-managed storage containing bindings received through `deployBinding`
 - `simple-client-test.js`: a small test client for the Simple Binding
 - `run-runtime-tests.sh`: scripted checks for the documented flows
 
-The runtime itself does not simulate industrial devices. It manages protocol bindings in the active node-wot Servient. The presentation scenario in `../my_presentation` uses this runtime together with an application Thing and simulated devices.
+The runtime itself does not contain the example bindings and does not simulate industrial devices. It manages received protocol bindings in the active node-wot Servient. The `my_bindings` directory represents packages available to an external management client. The presentation scenario in `../my_presentation` uses this runtime together with an application Thing and simulated devices.
 
 ## 2. Prerequisites
 
@@ -50,7 +48,7 @@ If the Docker image is not available yet, build it from the repository root:
 npm run build:docker
 ```
 
-Rebuilding the Docker image is usually only required after changes to `packages/cli/*`, `packages/core/*`, or the `Dockerfile`. Changes below `my_runtime/*` are mounted into the container at startup.
+Rebuilding the Docker image is usually only required after changes to `packages/cli/*`, `packages/core/*`, or the `Dockerfile`. Changes below `my_runtime/*` and `my_bindings/*` are mounted into the container at startup.
 
 ## 3. Start the Runtime
 
@@ -98,14 +96,14 @@ The Runtime Thing provides the following lifecycle actions:
 | Action | Purpose |
 | --- | --- |
 | `deployBinding` | Transfer a manifest and JavaScript entrypoint, install the binding, and load it |
-| `checkBindingCompatibility` | Validate the requirements of an installed or bundled binding without loading it |
-| `addBinding` | Load an already installed or bundled binding by ID |
+| `checkBindingCompatibility` | Validate the requirements of an installed binding without loading it |
+| `addBinding` | Load a binding already present in the runtime deployment store by ID |
 | `removeBinding` | Unregister a loaded binding while retaining its files |
 | `deleteBinding` | Delete an unloaded binding previously installed through `deployBinding` |
 
 ## 5. Binding Manifest Model
 
-Each binding contains a `manifest.json`. Bundled bindings reside below `my_runtime/bindings/<binding-id>`, while transferred bindings are stored by the runtime below `my_runtime/deployed-bindings/<binding-id>`. The manifest separates the upper WoT-facing side from the lower runtime/platform requirements.
+Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an `index.js`. These packages represent the sender side and are not searched by the runtime. After transfer, the runtime stores the received files below `my_runtime/deployed-bindings/<binding-id>`. The manifest separates the upper WoT-facing side from the lower runtime/platform requirements.
 
 `provides` describes what the binding adds to the WoT runtime:
 
@@ -163,20 +161,20 @@ Before loading a binding, the runtime validates the manifest and checks whether 
 
 `deployBinding` accepts the parsed manifest as an object and the complete JavaScript entrypoint as a string in one WoT action invocation. The runtime validates the package, checks its requirements, writes it to the dedicated deployment store, loads it, and registers its ClientFactory or Server in the active Servient.
 
-The directory `my_runtime/deployable-bindings/deployed-example-binding` contains a minimal package for this flow. It is intentionally outside `my_runtime/bindings`, so `addBinding` cannot load it before it has been transferred.
+The packages in `my_bindings` represent files available to the sending management client. The runtime does not include `my_bindings` in its binding search path. Consequently, `addBinding` cannot load a package before it has been transferred through `deployBinding`.
 
-Create the action payload from the example package:
+Create the action payload for `simple-binding` from the sender-side package:
 
 ```bash
-DEPLOYMENT_EXAMPLE_DIR="my_runtime/deployable-bindings/deployed-example-binding" \
+BINDING_DIR="my_bindings/simple-binding" \
 node -e '
 const fs = require("fs");
 const path = require("path");
-const basePath = process.env.DEPLOYMENT_EXAMPLE_DIR;
+const basePath = process.env.BINDING_DIR;
 const manifest = JSON.parse(fs.readFileSync(path.join(basePath, "manifest.json"), "utf8"));
 const source = fs.readFileSync(path.join(basePath, "index.js"), "utf8");
 process.stdout.write(JSON.stringify({ manifest, source }));
-' > /tmp/deployed-example-binding.json
+' > /tmp/simple-binding-deployment.json
 ```
 
 Transfer and load the binding through the Runtime Thing:
@@ -184,7 +182,7 @@ Transfer and load the binding through the Runtime Thing:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deployBinding \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/deployed-example-binding.json
+  --data-binary @/tmp/simple-binding-deployment.json
 ```
 
 Expected result:
@@ -192,7 +190,7 @@ Expected result:
 ```json
 {
   "result": true,
-  "message": "Binding 'deployed-example-binding' deployed and loaded with schemes deployed-example."
+  "message": "Binding 'simple-binding' deployed and loaded with schemes simple."
 }
 ```
 
@@ -200,7 +198,23 @@ The prototype accepts one `index.js` file and one manifest. Binding IDs may cont
 
 ### 6.2 Manage an Installed Binding
 
-Check whether an installed or bundled binding can be loaded:
+After the successful deployment in the previous section, inspect the active bindings:
+
+Open: <http://localhost:8080/runtime/properties/registeredBindings>
+
+```bash
+curl http://localhost:8080/runtime/properties/registeredBindings
+```
+
+Remove the binding from the Servient:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
+  -H "Content-Type: application/json" \
+  --data '{"id":"simple-binding"}'
+```
+
+The files remain in the deployment store. Check whether the installed binding can be loaded again:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -219,7 +233,7 @@ Expected shape for a compatible binding:
 }
 ```
 
-Load a binding:
+Load the installed binding again:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
@@ -227,15 +241,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"simple-binding"}'
 ```
 
-Check loaded bindings:
-
-Open: <http://localhost:8080/runtime/properties/registeredBindings>
-
-```bash
-curl http://localhost:8080/runtime/properties/registeredBindings
-```
-
-Remove a binding:
+Remove it again before deleting its files:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
@@ -243,43 +249,29 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   --data '{"id":"simple-binding"}'
 ```
 
-For a binding installed through `deployBinding`, removal only unregisters it from the Servient. It remains in the deployment store and can be loaded again through the unchanged `addBinding` action:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"deployed-example-binding"}'
-```
-
 An unloaded deployed binding can be deleted permanently:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deleteBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"deployed-example-binding"}'
+  --data '{"id":"simple-binding"}'
 ```
 
-`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. Bindings supplied with the runtime under `my_runtime/bindings`, such as `simple-binding`, cannot be deleted through this action. A deployed binding must be removed before it can be deleted.
+`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. A deployed binding must be removed before it can be deleted. Deleting it removes the runtime-side copy but does not modify the original package under `my_bindings` on the sender side.
 
 ## 7. Available Demo Bindings
 
 ### 7.1 CoAP Binding
 
-Location:
+Sender-side package:
 
 ```text
-my_runtime/bindings/coap-binding
+my_bindings/coap-binding
 ```
 
 This binding exposes the runtime through an additional CoAP server on `5684/udp`.
 
-Load:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"coap-binding"}'
-```
+Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/coap-binding"`.
 
 Remove:
 
@@ -291,21 +283,15 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
 
 ### 7.2 Simple Binding
 
-Location:
+Sender-side package:
 
 ```text
-my_runtime/bindings/simple-binding
+my_bindings/simple-binding
 ```
 
 This binding provides a small custom client/server pair for the `simple` scheme. The server listens on `8091/tcp`.
 
-Load:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
-```
+Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/simple-binding"`.
 
 Remove:
 
@@ -317,21 +303,15 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
 
 ### 7.3 New Raw TCP Binding
 
-Location:
+Sender-side package:
 
 ```text
-my_runtime/bindings/new-binding
+my_bindings/new-binding
 ```
 
 This binding provides a custom `new` scheme over a minimal JSON-line protocol on a TCP stream socket. The server listens on `8092/tcp`. It is the binding used by the presentation scenario when the replacement meter no longer speaks CoAP.
 
-Load:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
-```
+Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/new-binding"`.
 
 Remove:
 
@@ -340,16 +320,6 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
   --data '{"id":"new-binding"}'
 ```
-
-### 7.4 Deployable Example Binding
-
-Location before transfer:
-
-```text
-my_runtime/deployable-bindings/deployed-example-binding
-```
-
-This minimal client binding provides the `deployed-example` scheme and is used to demonstrate the deployment lifecycle. It is not part of the runtime's bundled binding directory. The package must first be sent through `deployBinding` as described in [6.1](#61-deploy-a-binding-through-wot).
 
 ## 8. Negative Tests
 
@@ -394,32 +364,24 @@ A binding manifest with an unavailable interface produces a missing requirement.
 }
 ```
 
-Because the runtime currently provides no `amqp` protocol stack in `runtimeCapabilities.interfaces`, `checkBindingCompatibility` reports this requirement as missing.
+Because the runtime currently provides no `amqp` protocol stack in `runtimeCapabilities.interfaces`, `deployBinding` rejects the package before storing or executing its source code and returns the missing requirement.
 
 ### 8.3 Invalid Binding Implementation
 
 The `wrong-binding` binding is an intentionally invalid negative example:
 
 ```text
-my_runtime/bindings/wrong-binding
+my_bindings/wrong-binding
 ```
 
-Its manifest is formally valid and compatible, but the entry point returns an invalid ClientFactory without a `getClient()` method. The compatibility check should succeed, while the actual load through `addBinding` should fail.
+Its manifest is formally valid and compatible, but the entry point returns an invalid ClientFactory without a `getClient()` method. The deployment therefore passes manifest and compatibility validation but fails while registering the implementation. The runtime rolls the transferred files back automatically.
 
-Compatibility check:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
-  -H "Content-Type: application/json" \
-  --data '{"id":"wrong-binding"}'
-```
-
-Load attempt:
+Create the deployment payload as described in [6.1](#61-deploy-a-binding-through-wot), using `BINDING_DIR="my_bindings/wrong-binding"`, and invoke `deployBinding`:
 
 ```bash
-curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
+curl -i -X POST http://localhost:8080/runtime/actions/deployBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"wrong-binding"}'
+  --data-binary @/tmp/wrong-binding-deployment.json
 ```
 
 Expected error:
@@ -430,7 +392,7 @@ Binding 'wrong-binding' returned an invalid client factory.
 
 ## 9. Automated Tests
 
-The script `my_runtime/run-runtime-tests.sh` executes the documented runtime, deployment lifecycle, binding, and negative tests automatically. The deployment checks transfer the example package, remove and reload it, delete it, and verify that a bundled binding cannot be deleted. A running runtime at <http://localhost:8080/runtime> is required.
+The script `my_runtime/run-runtime-tests.sh` executes the documented runtime, deployment lifecycle, binding, and negative tests automatically. Every binding used by the tests is first read from `my_bindings` and transferred through `deployBinding`. The tests also cover removal, reloading with `addBinding`, deletion, incompatible requirements, and rollback of an invalid implementation. A running runtime at <http://localhost:8080/runtime> is required.
 
 ```bash
 ./my_runtime/run-runtime-tests.sh

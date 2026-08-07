@@ -125,7 +125,7 @@ type DynamicBinding = {
     createServer?: () => RuntimeServer;
 };
 
-//?
+// Supported CommonJS export shapes for a binding module.
 type BindingModule = {
     createBinding?: () => DynamicBinding;
     default?: {
@@ -261,26 +261,11 @@ function getDeployedBindingPath(bindingId: string): string {
     return path.join(getDeployedBindingsRoot(), bindingId);
 }
 
-function getBundledBindingCandidates(bindingId: string): string[] {
-    validateBindingId(bindingId);
-
-    return [
-        path.resolve(__dirname, "bindings", bindingId),
-        path.resolve(process.cwd(), "my_runtime", "bindings", bindingId),
-        path.resolve(process.cwd(), "dist", "my_runtime", "bindings", bindingId),
-    ];
-}
-
-// Search both the runtime-managed deployment store and the bundled examples.
 function resolveBindingBasePath(bindingId: string): string {
-    const candidates = [getDeployedBindingPath(bindingId), ...getBundledBindingCandidates(bindingId)];
+    const bindingBasePath = getDeployedBindingPath(bindingId);
 
-    const bindingBasePath = candidates.find((candidate) => existsSync(candidate));
-
-    if (bindingBasePath == null) {
-        throw new Error(
-            `Binding '${bindingId}' was not found in the deployment store, my_runtime/bindings or dist/my_runtime/bindings.`
-        );
+    if (!existsSync(bindingBasePath)) {
+        throw new Error(`Binding '${bindingId}' was not found in the runtime deployment store.`);
     }
 
     return bindingBasePath;
@@ -305,11 +290,6 @@ function validateDeployBindingInput(input: DeployBindingInput | undefined): asse
     if (typeof input.source !== "string" || input.source.length === 0) {
         throw new Error("Deployment input must contain non-empty JavaScript source code.");
     }
-
-}
-
-function bundledBindingExists(bindingId: string): boolean {
-    return getBundledBindingCandidates(bindingId).some((candidate) => existsSync(candidate));
 }
 
 async function installDeployedBinding(manifest: RuntimeBindingManifest, source: string): Promise<string> {
@@ -774,7 +754,7 @@ function loadBinding(bindingId: string): {
     return { manifest, binding, manifestPath, entrypointPath };
 }
 
-//clear the module cache so the bindin is new if we reload it
+// Clear the module cache so the binding is evaluated again when reloaded.
 function clearModuleCache(modulePath: string): void {
     try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -932,7 +912,7 @@ async function main() {
             },
             registeredBindings: {
                 type: "array",
-                description: "Bindings currently known to the runtime",
+                description: "Bindings currently loaded in the runtime",
                 observable: true,
                 readOnly: true,
                 items: {
@@ -1137,13 +1117,6 @@ async function main() {
 
             if (loadedBindings.has(bindingId)) {
                 return { result: false, message: `Binding '${bindingId}' is already loaded.` };
-            }
-
-            if (bundledBindingExists(bindingId)) {
-                return {
-                    result: false,
-                    message: `Binding '${bindingId}' is bundled with the runtime and cannot be replaced through deployBinding.`,
-                };
             }
 
             if (existsSync(getDeployedBindingPath(bindingId))) {
