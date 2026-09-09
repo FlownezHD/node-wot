@@ -89,6 +89,11 @@
             background: #17243a;
         }
 
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.42;
+        }
+
         .timestamp {
             min-width: 190px;
             color: var(--muted);
@@ -274,6 +279,11 @@
             background: #fde68a;
         }
 
+        .badge.deployed {
+            color: #082f49;
+            background: #7dd3fc;
+        }
+
         .badge.off {
             color: #d7dee8;
             background: #334155;
@@ -309,6 +319,37 @@
         .details {
             display: grid;
             gap: 16px;
+        }
+
+        .action-bar {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .action-bar button {
+            width: 100%;
+        }
+
+        .deployment-path {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+
+        .operation-result {
+            min-height: 18px;
+            margin: 10px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .operation-result.error {
+            color: var(--bad);
         }
 
         .panel {
@@ -431,6 +472,10 @@
                 left: auto;
                 padding: 18px 18px 0;
             }
+
+            .action-bar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
     </style>
 </head>
@@ -475,8 +520,8 @@
                 </article>
 
                 <article id="node-binding" class="node binding off">
-                    <h2>new-binding <span class="badge off">not loaded</span></h2>
-                    <p>Dynamically loaded raw TCP protocol binding.</p>
+                    <h2>new-binding <span class="badge off">not deployed</span></h2>
+                    <p>Raw TCP package transferred from the sender through <code>deployBinding</code>.</p>
                 </article>
 
                 <article id="node-battery" class="node battery off">
@@ -496,6 +541,19 @@
             </section>
 
             <aside class="details">
+                <section class="panel">
+                    <h2>Binding Deployment</h2>
+                    <div id="deploymentState"></div>
+                    <div class="deployment-path">my_bindings/new-binding -> Runtime.deployBinding</div>
+                    <div class="action-bar">
+                        <button id="deployButton" type="button">Deploy</button>
+                        <button id="loadButton" type="button">Load</button>
+                        <button id="removeButton" type="button">Unload</button>
+                        <button id="deleteButton" type="button">Delete</button>
+                    </div>
+                    <p id="operationResult" class="operation-result" aria-live="polite"></p>
+                </section>
+
                 <section class="panel">
                     <h2>Supported Protocols</h2>
                     <div id="protocolRows"></div>
@@ -542,6 +600,19 @@
             void refresh();
         });
 
+        const bindingButtons = {
+            deploy: document.getElementById("deployButton"),
+            load: document.getElementById("loadButton"),
+            remove: document.getElementById("removeButton"),
+            delete: document.getElementById("deleteButton")
+        };
+
+        for (const [action, button] of Object.entries(bindingButtons)) {
+            button.addEventListener("click", () => {
+                void runBindingAction(action);
+            });
+        }
+
         async function refresh() {
             try {
                 const response = await fetch("/api/status", { cache: "no-store" });
@@ -567,6 +638,7 @@
             renderProtocolRows(data.protocols || []);
             renderStatusRows(data.nodes);
             renderLatestReading(data.nodes);
+            renderDeployment(data.bindingDeployment || { deployed: false, loaded: false });
         }
 
         function updateNode(element, node) {
@@ -578,6 +650,13 @@
                 element.classList.add("active");
                 badge.classList.add("ok");
                 badge.textContent = "active";
+                return;
+            }
+
+            if (node.deployed) {
+                element.classList.add("warn");
+                badge.classList.add("deployed");
+                badge.textContent = "deployed";
                 return;
             }
 
@@ -625,8 +704,37 @@
 
         function renderStatusRows(nodes) {
             document.getElementById("statusRows").innerHTML = Object.values(nodes)
-                .map((node) => rowTemplate(node.label, node.message, node.active, isBlockedMessage(node.message)))
+                .map((node) => rowTemplate(
+                    node.label,
+                    node.message,
+                    node.active,
+                    isBlockedMessage(node.message),
+                    node.deployed && !node.loaded
+                ))
                 .join("");
+        }
+
+        function renderDeployment(deployment) {
+            const deployedOnly = deployment.deployed && !deployment.loaded;
+            const title = deployment.loaded ? "Loaded" : deployedOnly ? "Stored" : "Not deployed";
+            const message = deployment.loaded
+                ? "new-binding is registered in the shared Servient."
+                : deployedOnly
+                    ? "The transferred package remains in runtime storage."
+                    : "The package is available only on the sender side.";
+
+            document.getElementById("deploymentState").innerHTML = rowTemplate(
+                title,
+                message,
+                deployment.loaded,
+                false,
+                deployedOnly
+            );
+
+            bindingButtons.deploy.disabled = deployment.deployed;
+            bindingButtons.load.disabled = !deployment.deployed || deployment.loaded;
+            bindingButtons.remove.disabled = !deployment.loaded;
+            bindingButtons.delete.disabled = !deployment.deployed || deployment.loaded;
         }
 
         function inactiveBadgeText(node) {
@@ -637,9 +745,9 @@
             return /no ClientFactory|missing .*binding|binding .*missing|blocked/i.test(message || "");
         }
 
-        function rowTemplate(title, message, active, warning) {
-            const badgeClass = active ? "ok" : warning ? "warn" : "off";
-            const badgeText = active ? "active" : warning ? "blocked" : "off";
+        function rowTemplate(title, message, active, warning, deployed = false) {
+            const badgeClass = active ? "ok" : deployed ? "deployed" : warning ? "warn" : "off";
+            const badgeText = active ? "active" : deployed ? "deployed" : warning ? "blocked" : "off";
 
             return `
                 <div class="status-row">
@@ -650,6 +758,35 @@
                     <span class="badge ${badgeClass}">${badgeText}</span>
                 </div>
             `;
+        }
+
+        async function runBindingAction(action) {
+            const resultElement = document.getElementById("operationResult");
+            resultElement.classList.remove("error");
+            resultElement.textContent = `${action[0].toUpperCase()}${action.slice(1)} in progress...`;
+
+            for (const button of Object.values(bindingButtons)) {
+                button.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`/api/bindings/new-binding/${action}`, {
+                    method: "POST",
+                    headers: { accept: "application/json" }
+                });
+                const result = await response.json();
+
+                if (!response.ok || result.result !== true) {
+                    throw new Error(result.message || `Binding action '${action}' failed.`);
+                }
+
+                resultElement.textContent = result.message;
+            } catch (error) {
+                resultElement.classList.add("error");
+                resultElement.textContent = error instanceof Error ? error.message : String(error);
+            } finally {
+                await refresh();
+            }
         }
 
         function renderLatestReading(nodes) {

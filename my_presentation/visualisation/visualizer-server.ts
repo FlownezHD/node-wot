@@ -24,6 +24,11 @@ type BindingInfo = {
     id?: string;
 };
 
+type BindingDeploymentStatus = CheckResult & {
+    deployed: boolean;
+    loaded: boolean;
+};
+
 type ProtocolInfo = {
     scheme: string;
     source: string;
@@ -35,6 +40,7 @@ const port = Number(process.env.VISUALIZER_PORT || 9200);
 const runtimeBaseUrl = process.env.RUNTIME_HTTP || "http://localhost:8080";
 const newMeterTdUri = process.env.NEW_METER_TD ?? "new://localhost:9103/new-electricity-meter-01";
 const htmlPath = path.resolve(__dirname, "visualizer.html");
+const newBindingPath = path.resolve(__dirname, "../../my_bindings/new-binding");
 
 const server = http.createServer((req, res) => {
     void handleRequest(req, res);
@@ -50,6 +56,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (req.method === "GET" && url.pathname === "/api/status") {
         await sendJson(res, 200, await collectStatus());
+        return;
+    }
+
+    const bindingAction = getBindingAction(url.pathname);
+
+    if (req.method === "POST" && bindingAction != null) {
+        const result = await executeBindingAction(bindingAction);
+        await sendJson(res, result.ok ? 200 : 502, result.ok ? result.value : { result: false, message: result.error });
         return;
     }
 
@@ -72,6 +86,7 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
     const registeredBindings = await getRegisteredBindings();
     const protocols = await getSupportedProtocols();
     const newBindingLoaded = registeredBindings.some((binding) => binding.id === "new-binding");
+    const newBindingStatus = await getNewBindingStatus(newBindingLoaded);
     const coapProtocols = protocols.filter((protocol) => protocol.scheme === "coap");
     const coapSupported = coapProtocols.length > 0;
 
@@ -100,10 +115,12 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
                 details: coapProtocols as unknown as JsonValue,
             },
             newBinding: {
-                active: newBindingLoaded,
-                label: "new-binding",
-                message: newBindingLoaded ? "Loaded in the shared Servient" : "Not loaded",
-                details: registeredBindings as unknown as JsonValue,
+                ...newBindingStatus,
+                details: {
+                    senderPackage: "my_bindings/new-binding",
+                    runtimeStorage: "my_runtime/deployed-bindings/new-binding",
+                    compatibility: newBindingStatus.details ?? null,
+                },
             },
             battery: batteryRead,
             oldMeter: oldMeterRead,
@@ -137,6 +154,86 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
             },
         },
         protocols: protocols as unknown as JsonValue,
+        bindingDeployment: {
+            deployed: newBindingStatus.deployed,
+            loaded: newBindingStatus.loaded,
+            senderPackage: "my_bindings/new-binding",
+        },
+    };
+}
+
+function getBindingAction(pathname: string): "deploy" | "load" | "remove" | "delete" | undefined {
+    const match = /^\/api\/bindings\/new-binding\/(deploy|load|remove|delete)$/.exec(pathname);
+    return match?.[1] as "deploy" | "load" | "remove" | "delete" | undefined;
+}
+
+async function executeBindingAction(
+    actionName: "deploy" | "load" | "remove" | "delete"
+): Promise<{ ok: true; value: JsonValue } | { ok: false; error: string }> {
+    if (actionName === "deploy") {
+        try {
+            const [manifestText, source] = await Promise.all([
+                readFile(path.join(newBindingPath, "manifest.json"), "utf8"),
+                readFile(path.join(newBindingPath, "index.js"), "utf8"),
+            ]);
+            const manifest = JSON.parse(manifestText) as JsonValue;
+
+            return requestJson("POST", "/runtime/actions/deployBinding", { manifest, source });
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : "Failed to create the new-binding deployment payload.",
+            };
+        }
+    }
+
+    const runtimeAction = {
+        load: "addBinding",
+        remove: "removeBinding",
+        delete: "deleteBinding",
+    }[actionName];
+
+    return requestJson("POST", `/runtime/actions/${runtimeAction}`, { id: "new-binding" });
+}
+
+async function getNewBindingStatus(loaded: boolean): Promise<BindingDeploymentStatus> {
+    if (loaded) {
+        return {
+            active: true,
+            deployed: true,
+            loaded: true,
+            label: "new-binding",
+            message: "Deployed and loaded in the shared Servient",
+        };
+    }
+
+    const compatibility = await requestJson("POST", "/runtime/actions/checkBindingCompatibility", {
+        id: "new-binding",
+    });
+
+    if (!compatibility.ok || compatibility.value == null || typeof compatibility.value !== "object") {
+        return {
+            active: false,
+            deployed: false,
+            loaded: false,
+            label: "new-binding",
+            message: compatibility.ok ? "Deployment state unavailable" : compatibility.error,
+        };
+    }
+
+    const details = compatibility.value as { compatible?: unknown; missingRequirements?: unknown };
+    const missingRequirements = Array.isArray(details.missingRequirements)
+        ? details.missingRequirements.filter((entry): entry is string => typeof entry === "string")
+        : [];
+    const deployed = !missingRequirements.some((entry) => /was not found in the runtime deployment store/i.test(entry));
+
+    return {
+        active: false,
+        deployed,
+        loaded: false,
+        label: "new-binding",
+        message: deployed ? "Deployed in runtime storage, currently not loaded" : "Not deployed",
+        details: compatibility.value,
     };
 }
 
@@ -350,8 +447,13 @@ async function readDevice(pathname: string, label: string, description: string):
     };
 }
 
-async function requestJson(method: "GET" | "POST", pathname: string): Promise<{ ok: true; value: JsonValue } | { ok: false; error: string }> {
+async function requestJson(
+    method: "GET" | "POST",
+    pathname: string,
+    payload?: JsonValue
+): Promise<{ ok: true; value: JsonValue } | { ok: false; error: string }> {
     const target = new URL(pathname, runtimeBaseUrl);
+    const requestBody = payload == null ? "" : JSON.stringify(payload);
 
     return new Promise((resolve) => {
         const req = http.request(
@@ -362,20 +464,29 @@ async function requestJson(method: "GET" | "POST", pathname: string): Promise<{ 
                 method,
                 headers: {
                     accept: "application/json",
-                    ...(method === "POST" ? { "content-type": "application/json", "content-length": "0" } : {}),
+                    ...(method === "POST"
+                        ? { "content-type": "application/json", "content-length": Buffer.byteLength(requestBody) }
+                        : {}),
                 },
-                timeout: 1500,
+                timeout: 5000,
             },
             (res) => {
-                let body = "";
+                let responseBody = "";
 
                 res.setEncoding("utf8");
                 res.on("data", (chunk) => {
-                    body += chunk;
+                    responseBody += chunk;
                 });
                 res.on("end", () => {
                     try {
-                        resolve({ ok: true, value: JSON.parse(body) as JsonValue });
+                        const value = JSON.parse(responseBody) as JsonValue;
+
+                        if (res.statusCode != null && res.statusCode >= 400) {
+                            resolve({ ok: false, error: `Runtime returned HTTP ${res.statusCode}: ${responseBody}` });
+                            return;
+                        }
+
+                        resolve({ ok: true, value });
                     } catch {
                         resolve({ ok: false, error: `Invalid JSON from ${target.href}` });
                     }
@@ -389,7 +500,7 @@ async function requestJson(method: "GET" | "POST", pathname: string): Promise<{ 
         req.on("error", (error) => {
             resolve({ ok: false, error: error.message });
         });
-        req.end();
+        req.end(requestBody);
     });
 }
 
