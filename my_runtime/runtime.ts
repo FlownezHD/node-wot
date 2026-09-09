@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { mkdir, rename, rm, writeFile } from "fs/promises";
 import path from "path";
 
@@ -42,9 +42,16 @@ type RuntimeBindingInput = {
     id: string;
 };
 
-type DeployBindingInput = {
+type BindingPackageInput = {
     manifest: RuntimeBindingManifest;
     source: string;
+};
+
+type BindingLifecycleState = "stored" | "active";
+
+type BindingState = {
+    id: string;
+    state: BindingLifecycleState;
 };
 
 type BindingRole = "client" | "server";
@@ -271,13 +278,13 @@ function resolveBindingBasePath(bindingId: string): string {
     return bindingBasePath;
 }
 
-function validateDeployBindingInput(input: DeployBindingInput | undefined): asserts input is DeployBindingInput {
+function validateBindingPackageInput(input: BindingPackageInput | undefined): asserts input is BindingPackageInput {
     if (input == null || typeof input !== "object") {
-        throw new Error("Deployment input must be an object.");
+        throw new Error("Binding package input must be an object.");
     }
 
     if (input.manifest == null || typeof input.manifest !== "object") {
-        throw new Error("Deployment input must contain a binding manifest.");
+        throw new Error("Binding package must contain a binding manifest.");
     }
 
     validateBindingManifest(input.manifest);
@@ -288,8 +295,24 @@ function validateDeployBindingInput(input: DeployBindingInput | undefined): asse
     }
 
     if (typeof input.source !== "string" || input.source.length === 0) {
-        throw new Error("Deployment input must contain non-empty JavaScript source code.");
+        throw new Error("Binding package must contain non-empty JavaScript source code.");
     }
+}
+
+function getBindingStates(): BindingState[] {
+    const deploymentRoot = getDeployedBindingsRoot();
+
+    if (!existsSync(deploymentRoot)) {
+        return [];
+    }
+
+    return readdirSync(deploymentRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && bindingIdPattern.test(entry.name))
+        .map<BindingState>((entry) => ({
+            id: entry.name,
+            state: loadedBindings.has(entry.name) ? "active" : "stored",
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function installDeployedBinding(manifest: RuntimeBindingManifest, source: string): Promise<string> {
@@ -930,6 +953,25 @@ async function main() {
                     },
                 },
             },
+            bindingStates: {
+                type: "array",
+                description: "Runtime-side lifecycle states of stored and active dynamic bindings",
+                observable: true,
+                readOnly: true,
+                items: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                        },
+                        state: {
+                            type: "string",
+                            enum: ["stored", "active"],
+                        },
+                    },
+                    required: ["id", "state"],
+                },
+            },
             runtimeCapabilities: {
                 type: "object",
                 description: "Downward interfaces provided by this runtime.",
@@ -1004,15 +1046,18 @@ async function main() {
                 },
             },
             checkBindingCompatibility: {
-                description: "Check whether a binding can run on the active runtime without loading it",
+                description: "Check a transferred binding package against the active runtime without storing or executing it",
                 input: {
                     type: "object",
                     properties: {
-                        id: {
+                        manifest: {
+                            type: "object",
+                        },
+                        source: {
                             type: "string",
                         },
                     },
-                    required: ["id"],
+                    required: ["manifest", "source"],
                 },
                 output: {
                     type: "object",
@@ -1104,15 +1149,16 @@ async function main() {
 
     thing.setPropertyReadHandler("status", async () => runtimeStatus);
     thing.setPropertyReadHandler("registeredBindings", async () => registeredBindings);
+    thing.setPropertyReadHandler("bindingStates", async () => getBindingStates());
     thing.setPropertyReadHandler("runtimeCapabilities", async () => getRuntimeCapabilities(servient));
 
     thing.setActionHandler("deployBinding", async (params?: WoT.InteractionOutput | null) => {
-        const input = params == null ? undefined : ((await params.value()) as DeployBindingInput);
+        const input = params == null ? undefined : ((await params.value()) as BindingPackageInput);
         let deploymentInstalled = false;
         let bindingId = "";
 
         try {
-            validateDeployBindingInput(input);
+            validateBindingPackageInput(input);
             bindingId = input.manifest.id;
 
             if (loadedBindings.has(bindingId)) {
@@ -1146,12 +1192,13 @@ async function main() {
             registeredBindings = [...registeredBindings, loadedBinding.binding];
 
             thing.emitPropertyChange("registeredBindings");
+            thing.emitPropertyChange("bindingStates");
             thing.emitEvent("bindingDeployed", { id: bindingId });
             thing.emitEvent("bindingAdded", { id: bindingId });
 
             return {
                 result: true,
-                message: `Binding '${bindingId}' deployed and loaded with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
+                message: `Binding '${bindingId}' deployed and activated with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
             };
         } catch (error) {
             if (deploymentInstalled && bindingId.length > 0) {
@@ -1202,11 +1249,12 @@ async function main() {
             registeredBindings = [...registeredBindings, loadedBinding.binding];
 
             thing.emitPropertyChange("registeredBindings");
+            thing.emitPropertyChange("bindingStates");
             thing.emitEvent("bindingAdded", { id: input.id });
 
             return {
                 result: true,
-                message: `Binding '${input.id}' loaded with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
+                message: `Binding '${input.id}' activated with schemes ${loadedBinding.binding.provides.schemes.join(", ")}.`,
             };
         } catch (error) {
             return {
@@ -1217,38 +1265,28 @@ async function main() {
     });
 
     thing.setActionHandler("checkBindingCompatibility", async (params?: WoT.InteractionOutput | null) => {
-        const input = params == null ? undefined : ((await params.value()) as { id: string });
-
-        if (typeof input?.id !== "string" || input.id.length === 0) {
-            return {
-                id: "",
-                compatible: false,
-                missingRequirements: [],
-                conflicts: [],
-                message: "Binding id is required.",
-            };
-        }
+        const input = params == null ? undefined : ((await params.value()) as BindingPackageInput);
 
         try {
-            const { manifest } = readBindingManifest(input.id);
+            validateBindingPackageInput(input);
             const compatibility = checkBindingCompatibility(
-                manifest,
+                input.manifest,
                 getRuntimeCapabilities(servient),
                 getCurrentRuntimeState()
             );
 
             return {
-                id: input.id,
+                id: input.manifest.id,
                 compatible: compatibility.compatible,
                 missingRequirements: compatibility.missingRequirements,
                 conflicts: compatibility.conflicts,
             };
         } catch (error) {
             return {
-                id: input.id,
+                id: typeof input?.manifest?.id === "string" ? input.manifest.id : "",
                 compatible: false,
                 missingRequirements: [
-                    error instanceof Error ? error.message : `Failed to check binding '${input.id}'.`,
+                    error instanceof Error ? error.message : "Failed to check binding package.",
                 ],
                 conflicts: [],
             };
@@ -1272,9 +1310,10 @@ async function main() {
             registeredBindings = registeredBindings.filter((binding) => binding.id !== input.id);
 
             thing.emitPropertyChange("registeredBindings");
+            thing.emitPropertyChange("bindingStates");
             thing.emitEvent("bindingRemoved", { id: input.id });
 
-            return { result: true, message: `Binding '${input.id}' removed from runtime.` };
+            return { result: true, message: `Binding '${input.id}' moved to the stored state.` };
         } catch (error) {
             return {
                 result: false,
@@ -1308,9 +1347,10 @@ async function main() {
             }
 
             await deleteDeployedBindingFiles(input.id);
+            thing.emitPropertyChange("bindingStates");
             thing.emitEvent("bindingDeleted", { id: input.id });
 
-            return { result: true, message: `Deployed binding '${input.id}' deleted from runtime storage.` };
+            return { result: true, message: `Binding '${input.id}' deleted and returned to the not deployed state.` };
         } catch (error) {
             return {
                 result: false,

@@ -66,7 +66,7 @@ curl -i -X POST http://localhost:8080/energydemoapplication/actions/readBattery
 curl -i -X POST http://localhost:8080/energydemoapplication/actions/readOldMeter
 ```
 
-Try the replacement meter before `new-binding` is loaded:
+Try the replacement meter before `new-binding` is active:
 
 ```bash
 curl -i -X POST http://localhost:8080/energydemoapplication/actions/readNewMeter
@@ -86,7 +86,7 @@ process.stdout.write(JSON.stringify({ manifest, source }));
 ' > /tmp/new-binding-deployment.json
 ```
 
-Transfer and load `new-binding` dynamically through the management Runtime Thing:
+Transfer and activate `new-binding` dynamically through the management Runtime Thing:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deployBinding \

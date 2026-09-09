@@ -17,7 +17,7 @@ This directory contains the WoT runtime prototype for the dynamic protocol bindi
   - [7.2 Simple Binding](#72-simple-binding)
   - [7.3 New Raw TCP Binding](#73-new-raw-tcp-binding)
 - [8. Negative Tests](#8-negative-tests)
-  - [8.1 Already Loaded Binding](#81-already-loaded-binding)
+  - [8.1 Already Active Binding](#81-already-active-binding)
   - [8.2 Missing Runtime Interface](#82-missing-runtime-interface)
   - [8.3 Invalid Binding Implementation](#83-invalid-binding-implementation)
 - [9. Automated Tests](#9-automated-tests)
@@ -87,6 +87,7 @@ The runtime is exposed as a WoT Thing named `Runtime`.
 | Thing Description | <http://localhost:8080/runtime> | `curl http://localhost:8080/runtime` |
 | Status | <http://localhost:8080/runtime/properties/status> | `curl http://localhost:8080/runtime/properties/status` |
 | Registered bindings | <http://localhost:8080/runtime/properties/registeredBindings> | `curl http://localhost:8080/runtime/properties/registeredBindings` |
+| Binding states | <http://localhost:8080/runtime/properties/bindingStates> | `curl http://localhost:8080/runtime/properties/bindingStates` |
 | Runtime capabilities | <http://localhost:8080/runtime/properties/runtimeCapabilities> | `curl http://localhost:8080/runtime/properties/runtimeCapabilities` |
 
 `runtimeCapabilities.interfaces` lists the host interfaces and active native protocol stacks available to dynamic bindings. `runtimeCapabilities.supportedBindings.activeNative` lists native node-wot bindings already registered in the active Servient. `runtimeCapabilities.supportedBindings.loaded` lists dynamically loaded bindings.
@@ -95,8 +96,8 @@ The Runtime Thing provides the following lifecycle actions:
 
 | Action | Purpose |
 | --- | --- |
-| `deployBinding` | Transfer a manifest and JavaScript entrypoint, install the binding, and load it |
-| `checkBindingCompatibility` | Validate the requirements of an installed binding without loading it |
+| `deployBinding` | Transfer a manifest and JavaScript entrypoint, store the binding, and activate it |
+| `checkBindingCompatibility` | Validate a transferred binding package without storing or executing it |
 | `addBinding` | Change a stored binding to the active state by registering it in the Servient |
 | `removeBinding` | Change an active binding to the stored state while retaining its files |
 | `deleteBinding` | Delete a stored binding previously installed through `deployBinding` |
@@ -111,6 +112,8 @@ The binding lifecycle uses three states consistently:
 
 `deployBinding` changes a binding from `not deployed` to `active`. `removeBinding` changes it from `active` to `stored`, `addBinding` changes it from `stored` back to `active`, and `deleteBinding` changes it from `stored` to `not deployed`. The terms *load* and *remove* describe lifecycle operations; the resulting binding states are named *active* and *stored*.
 
+`bindingStates` lists runtime-side packages in the `stored` or `active` state. A sender-side package whose ID is absent from this property is `not deployed` on that runtime.
+
 ## 5. Binding Manifest Model
 
 Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an `index.js`. These packages represent the sender side and are not searched by the runtime. After transfer, the runtime stores the received files below `my_runtime/deployed-bindings/<binding-id>`. The manifest separates the upper WoT-facing side from the lower runtime/platform requirements.
@@ -119,7 +122,7 @@ Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an 
 
 ```json
 {
-  "schemes": ["simple"],
+  "schemes": ["new"],
   "roles": ["client", "server"],
   "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
 }
@@ -131,16 +134,21 @@ Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an 
 {
   "interfaces": [
     {
-      "type": "protocol-stack",
-      "protocol": "http",
-      "direction": "server"
+      "type": "stream-socket",
+      "direction": "server",
+      "operations": ["listen", "accept", "send", "receive", "close"]
+    },
+    {
+      "type": "stream-socket",
+      "direction": "client",
+      "operations": ["connect", "send", "receive", "close"]
     }
   ],
   "resources": {
     "ports": [
       {
         "transport": "tcp",
-        "preferred": 8091,
+        "preferred": 8092,
         "required": true,
         "exclusive": true
       }
@@ -149,34 +157,22 @@ Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an 
 }
 ```
 
-Socket-based bindings can also declare required operations:
+The operations specify which abstract stream-socket capabilities the `new-binding` requires for its server and client roles.
 
-```json
-{
-  "interfaces": [
-    {
-      "type": "stream-socket",
-      "direction": "client-server",
-      "operations": ["listen", "accept", "connect", "send", "receive", "close"]
-    }
-  ]
-}
-```
-
-Before loading a binding, the runtime validates the manifest and checks whether all requirements are compatible with the current runtime capabilities and resource state.
+Before activating a binding, the runtime validates the manifest and checks whether all requirements are compatible with the current runtime capabilities and resource state.
 
 ## 6. Management Flow
 
 ### 6.1 Deploy a Binding through WoT
 
-`deployBinding` accepts the parsed manifest as an object and the complete JavaScript entrypoint as a string in one WoT action invocation. The runtime validates the package, checks its requirements, writes it to the dedicated deployment store, loads it, and registers its ClientFactory or Server in the active Servient.
+`deployBinding` accepts the parsed manifest as an object and the complete JavaScript entrypoint as a string in one WoT action invocation. The runtime validates the package, checks its requirements, writes it to the dedicated deployment store, activates it, and registers its ClientFactory or Server in the Servient.
 
 The packages in `my_bindings` represent files available to the sending management client. The runtime does not include `my_bindings` in its binding search path. Consequently, `addBinding` cannot load a package before it has been transferred through `deployBinding`.
 
-Create the action payload for `simple-binding` from the sender-side package:
+Create the action payload for `new-binding` from the sender-side package:
 
 ```bash
-BINDING_DIR="my_bindings/simple-binding" \
+BINDING_DIR="my_bindings/new-binding" \
 node -e '
 const fs = require("fs");
 const path = require("path");
@@ -184,15 +180,36 @@ const basePath = process.env.BINDING_DIR;
 const manifest = JSON.parse(fs.readFileSync(path.join(basePath, "manifest.json"), "utf8"));
 const source = fs.readFileSync(path.join(basePath, "index.js"), "utf8");
 process.stdout.write(JSON.stringify({ manifest, source }));
-' > /tmp/simple-binding-deployment.json
+' > /tmp/new-binding-deployment.json
 ```
 
-Transfer and load the binding through the Runtime Thing:
+Check the external package against the current runtime before deployment:
+
+```bash
+curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
+  -H "Content-Type: application/json" \
+  --data-binary @/tmp/new-binding-deployment.json
+```
+
+Expected result:
+
+```json
+{
+  "id": "new-binding",
+  "compatible": true,
+  "missingRequirements": [],
+  "conflicts": []
+}
+```
+
+The action validates the package structure and uses its manifest to compare the declared requirements with the current runtime capabilities and resource state. It does not write the manifest or source code to `deployed-bindings`, load the JavaScript module, or change the binding lifecycle state. The package therefore remains `not deployed` after this check.
+
+Transfer and activate the binding through the Runtime Thing:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deployBinding \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/simple-binding-deployment.json
+  --data-binary @/tmp/new-binding-deployment.json
 ```
 
 Expected result:
@@ -200,7 +217,7 @@ Expected result:
 ```json
 {
   "result": true,
-  "message": "Binding 'simple-binding' deployed and loaded with schemes simple."
+  "message": "Binding 'new-binding' deployed and activated with schemes new."
 }
 ```
 
@@ -221,34 +238,32 @@ Remove the binding from the Servient:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data '{"id":"new-binding"}'
 ```
 
-The files remain in the deployment store. Check whether the installed binding can be loaded again:
+The files remain in the deployment store and the binding is now `stored`. Inspect the lifecycle state:
 
 ```bash
-curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
-  -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+curl http://localhost:8080/runtime/properties/bindingStates
 ```
 
-Expected shape for a compatible binding:
+Expected entry:
 
 ```json
-{
-  "id": "simple-binding",
-  "compatible": true,
-  "missingRequirements": [],
-  "conflicts": []
-}
+[
+  {
+    "id": "new-binding",
+    "state": "stored"
+  }
+]
 ```
 
-Load the installed binding again:
+Activate the stored binding again:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data '{"id":"new-binding"}'
 ```
 
 Remove it again before deleting its files:
@@ -256,18 +271,18 @@ Remove it again before deleting its files:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data '{"id":"new-binding"}'
 ```
 
-An unloaded deployed binding can be deleted permanently:
+A stored binding can be deleted permanently:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deleteBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data '{"id":"new-binding"}'
 ```
 
-`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. A deployed binding must be removed before it can be deleted. Deleting it removes the runtime-side copy but does not modify the original package under `my_bindings` on the sender side.
+`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. An active binding must first be changed to the `stored` state before it can be deleted. Deleting it removes the runtime-side copy but does not modify the original package under `my_bindings` on the sender side.
 
 ## 7. Available Demo Bindings
 
@@ -378,14 +393,14 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
 
 ## 8. Negative Tests
 
-### 8.1 Already Loaded Binding
+### 8.1 Already Active Binding
 
-If `simple-binding` is already loaded, another compatibility check for the same binding reports conflicts such as the registered `simple` scheme and the occupied port `8091`.
+If `new-binding` is already active, checking the sender-side package again reports conflicts such as the registered `new` scheme and the occupied port `8092`.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data-binary @/tmp/new-binding-deployment.json
 ```
 
 ### 8.2 Missing Runtime Interface

@@ -20,11 +20,12 @@ type DeviceReadResult = {
     message?: string;
 };
 
-type BindingInfo = {
-    id?: string;
-};
-
 type BindingLifecycleState = "not deployed" | "stored" | "active";
+
+type BindingState = {
+    id: string;
+    state: Exclude<BindingLifecycleState, "not deployed">;
+};
 
 type BindingDeploymentStatus = CheckResult & {
     state: BindingLifecycleState;
@@ -84,10 +85,11 @@ async function sendHtml(res: http.ServerResponse, headOnly = false): Promise<voi
 async function collectStatus(): Promise<Record<string, JsonValue>> {
     const runtimeStatus = await checkGet("/runtime/properties/status", "Runtime", "Management runtime HTTP endpoint");
     const appStatus = await checkGet("/energydemoapplication", "EnergyDemoApplication", "Presentation application Thing");
-    const registeredBindings = await getRegisteredBindings();
+    const bindingStates = await getBindingStates();
     const protocols = await getSupportedProtocols();
-    const newBindingActive = registeredBindings.some((binding) => binding.id === "new-binding");
-    const newBindingStatus = await getNewBindingStatus(newBindingActive);
+    const newBindingState = bindingStates.find((binding) => binding.id === "new-binding")?.state ?? "not deployed";
+    const newBindingActive = newBindingState === "active";
+    const newBindingStatus = getNewBindingStatus(newBindingState);
     const coapProtocols = protocols.filter((protocol) => protocol.scheme === "coap");
     const coapSupported = coapProtocols.length > 0;
 
@@ -196,8 +198,8 @@ async function executeBindingAction(
     return requestJson("POST", `/runtime/actions/${runtimeAction}`, { id: "new-binding" });
 }
 
-async function getNewBindingStatus(active: boolean): Promise<BindingDeploymentStatus> {
-    if (active) {
+function getNewBindingStatus(state: BindingLifecycleState): BindingDeploymentStatus {
+    if (state === "active") {
         return {
             active: true,
             state: "active",
@@ -206,31 +208,11 @@ async function getNewBindingStatus(active: boolean): Promise<BindingDeploymentSt
         };
     }
 
-    const compatibility = await requestJson("POST", "/runtime/actions/checkBindingCompatibility", {
-        id: "new-binding",
-    });
-
-    if (!compatibility.ok || compatibility.value == null || typeof compatibility.value !== "object") {
-        return {
-            active: false,
-            state: "not deployed",
-            label: "new-binding",
-            message: compatibility.ok ? "Deployment state unavailable" : compatibility.error,
-        };
-    }
-
-    const details = compatibility.value as { compatible?: unknown; missingRequirements?: unknown };
-    const missingRequirements = Array.isArray(details.missingRequirements)
-        ? details.missingRequirements.filter((entry): entry is string => typeof entry === "string")
-        : [];
-    const stored = !missingRequirements.some((entry) => /was not found in the runtime deployment store/i.test(entry));
-
     return {
         active: false,
-        state: stored ? "stored" : "not deployed",
+        state,
         label: "new-binding",
-        message: stored ? "Stored in runtime storage" : "Not deployed",
-        details: compatibility.value,
+        message: state === "stored" ? "Stored in runtime storage" : "Not deployed",
     };
 }
 
@@ -320,14 +302,24 @@ async function checkGet(pathname: string, label: string, description: string): P
     };
 }
 
-async function getRegisteredBindings(): Promise<BindingInfo[]> {
-    const result = await requestJson("GET", "/runtime/properties/registeredBindings");
+async function getBindingStates(): Promise<BindingState[]> {
+    const result = await requestJson("GET", "/runtime/properties/bindingStates");
 
     if (!result.ok || !Array.isArray(result.value)) {
         return [];
     }
 
-    return result.value.filter((entry): entry is BindingInfo => entry != null && typeof entry === "object");
+    return result.value.filter((entry): entry is BindingState => {
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+            return false;
+        }
+
+        const candidate = entry as { id?: unknown; state?: unknown };
+        return (
+            typeof candidate.id === "string" &&
+            (candidate.state === "stored" || candidate.state === "active")
+        );
+    });
 }
 
 async function getSupportedProtocols(): Promise<ProtocolInfo[]> {

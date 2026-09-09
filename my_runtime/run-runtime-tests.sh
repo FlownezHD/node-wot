@@ -281,6 +281,26 @@ test_rejected_deployment() {
     fi
 }
 
+test_rejected_compatibility_check() {
+    local scenario="$1"
+    local binding_id="$2"
+    local rejection_expression="$3"
+    local description="$4"
+    local payload
+
+    if run_capture "Create $description compatibility payload" create_negative_deployment_payload "$scenario"; then
+        payload="$CURRENT_OUTPUT"
+
+        if run_capture "Reject $description during compatibility check" action checkBindingCompatibility "$payload"; then
+            json_assert "$description is reported as incompatible" "$CURRENT_OUTPUT" "$rejection_expression"
+        fi
+    fi
+
+    if run_capture "Check compatibility test did not store $description" action addBinding "{\"id\":\"$binding_id\"}"; then
+        json_assert "$description remains not deployed after compatibility check" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+    fi
+}
+
 coap_request() {
     local uri="$1"
     local accept="${2:-}"
@@ -416,6 +436,10 @@ if run_capture "Read registeredBindings property" http_get "/runtime/properties/
     json_assert "registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
 fi
 
+if run_capture "Read bindingStates property" http_get "/runtime/properties/bindingStates"; then
+    json_assert "bindingStates is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
+fi
+
 if run_capture "Read runtimeCapabilities property" http_get "/runtime/properties/runtimeCapabilities"; then
     json_assert "runtimeCapabilities exposes interfaces" "$CURRENT_OUTPUT" 'Array.isArray(data.interfaces) && data.interfaces.length > 0'
     json_assert "runtimeCapabilities exposes supported bindings" "$CURRENT_OUTPUT" 'data.supportedBindings && Array.isArray(data.supportedBindings.activeNative.clients) && Array.isArray(data.supportedBindings.activeNative.servers) && Array.isArray(data.supportedBindings.loaded.clients) && Array.isArray(data.supportedBindings.loaded.servers)'
@@ -430,9 +454,21 @@ fi
 if run_capture "Create simple-binding deployment payload" create_deployment_payload simple-binding; then
     DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
 
+    if run_capture "Check external simple-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
+        json_assert "external simple-binding package is compatible" "$CURRENT_OUTPUT" 'data.id === "simple-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+    fi
+
+    if run_capture "Read bindingStates after compatibility check" http_get "/runtime/properties/bindingStates"; then
+        json_assert "compatibility check leaves simple-binding not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+    fi
+
     if run_capture "Deploy and load transferred simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
         json_assert "deployBinding result is true" "$CURRENT_OUTPUT" 'data.result === true'
     fi
+fi
+
+if run_capture "Read active simple-binding state" http_get "/runtime/properties/bindingStates"; then
+    json_assert "deployed simple-binding state is active" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding" && binding.state === "active")'
 fi
 
 if run_capture "registeredBindings contains deployed simple-binding" http_get "/runtime/properties/registeredBindings"; then
@@ -451,12 +487,16 @@ if run_capture "registeredBindings excludes removed simple-binding" http_get "/r
     json_assert "removed simple-binding is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
 fi
 
+if run_capture "Read stored simple-binding state" http_get "/runtime/properties/bindingStates"; then
+    json_assert "removed simple-binding state is stored" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding" && binding.state === "stored")'
+fi
+
 if run_capture "Reject duplicate deployment of installed simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
     json_assert "duplicate deployment is rejected without replacing installed files" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("already deployed")'
 fi
 
-if run_capture "Check installed simple-binding compatibility" action checkBindingCompatibility '{"id":"simple-binding"}'; then
-    json_assert "installed simple-binding is compatible" "$CURRENT_OUTPUT" 'data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+if run_capture "Recheck sender-side simple-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
+    json_assert "stored runtime copy is not used by compatibility check" "$CURRENT_OUTPUT" 'data.id === "simple-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
 fi
 
 if run_capture "Reload deployed simple-binding with addBinding" action addBinding '{"id":"simple-binding"}'; then
@@ -473,6 +513,10 @@ fi
 
 if run_capture "Loading deleted simple-binding fails" action addBinding '{"id":"simple-binding"}'; then
     json_assert "deleted simple-binding is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+fi
+
+if run_capture "Read bindingStates after deletion" http_get "/runtime/properties/bindingStates"; then
+    json_assert "deleted simple-binding state is not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
 fi
 
 section "CoAP Binding"
@@ -615,9 +659,16 @@ test_rejected_deployment \
     "unsafe binding entrypoint"
 
 section "Negative Deployment Compatibility"
-if run_capture "Compatibility conflict for already loaded simple-binding" action checkBindingCompatibility '{"id":"simple-binding"}'; then
+if run_capture "Compatibility conflict for external simple-binding package" action checkBindingCompatibility "$SIMPLE_DEPLOYMENT_PAYLOAD"; then
     json_assert "simple-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
 fi
+
+
+test_rejected_compatibility_check \
+    missing-interface \
+    missing-interface-binding \
+    'data.compatible === false && data.missingRequirements.some((item) => item.includes("protocol=amqp"))' \
+    "missing protocol-stack requirement"
 
 test_rejected_deployment \
     missing-interface \
