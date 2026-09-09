@@ -1106,7 +1106,7 @@ async function main() {
                 },
             },
             deleteBinding: {
-                description: "Delete an unloaded binding previously installed through deployBinding",
+                description: "Deactivate if necessary and delete a binding previously installed through deployBinding",
                 input: {
                     type: "object",
                     properties: {
@@ -1324,6 +1324,7 @@ async function main() {
 
     thing.setActionHandler("deleteBinding", async (params?: WoT.InteractionOutput | null) => {
         const input = params == null ? undefined : ((await params.value()) as RuntimeBindingInput);
+        let changedToStored = false;
 
         if (typeof input?.id !== "string" || input.id.length === 0) {
             return { result: false, message: "Binding id is required." };
@@ -1340,10 +1341,16 @@ async function main() {
             }
 
             if (loadedBindings.has(input.id)) {
-                return {
-                    result: false,
-                    message: `Binding '${input.id}' is currently loaded. Remove it before deleting it.`,
-                };
+                const removed = await unregisterBinding(input.id, servient);
+
+                if (!removed) {
+                    throw new Error(`Failed to deactivate binding '${input.id}' before deletion.`);
+                }
+
+                changedToStored = true;
+                registeredBindings = registeredBindings.filter((binding) => binding.id !== input.id);
+                thing.emitPropertyChange("registeredBindings");
+                thing.emitEvent("bindingRemoved", { id: input.id });
             }
 
             await deleteDeployedBindingFiles(input.id);
@@ -1352,6 +1359,10 @@ async function main() {
 
             return { result: true, message: `Binding '${input.id}' deleted and returned to the not deployed state.` };
         } catch (error) {
+            if (changedToStored) {
+                thing.emitPropertyChange("bindingStates");
+            }
+
             return {
                 result: false,
                 message: error instanceof Error ? error.message : `Failed to delete binding '${input.id}'.`,

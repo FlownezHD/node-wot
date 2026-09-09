@@ -100,9 +100,9 @@ Read the replacement meter again:
 curl -i -X POST http://localhost:8080/energydemoapplication/actions/readNewMeter
 ```
 
-The same flow can be presented through <http://localhost:9200>: **Deploy** performs the transfer and activates the binding, **Unload** changes it from *active* to *stored* while retaining its files, **Load** changes it from *stored* back to *active*, and **Delete** changes it from *stored* to *not deployed*. The topology consistently distinguishes the states *not deployed*, *stored*, and *active*.
+The same flow can be presented through <http://localhost:9200>: **Deploy** performs the transfer and activates the binding, **Unload** changes it from *active* to *stored* while retaining its files, and **Load** changes it from *stored* back to *active*. **Delete** changes either *stored* or *active* to *not deployed*; an active binding is automatically unregistered first. The topology consistently distinguishes the states *not deployed*, *stored*, and *active*.
 
-For a repeatable transfer demonstration, use **Unload** and then **Delete** after the presentation. If the runtime starts while a package from an earlier run is still stored, the visualizer reports the *stored* state and permits **Load** or **Delete** instead of deploying a duplicate.
+For a repeatable transfer demonstration, use **Delete** after the presentation. If the runtime starts while a package from an earlier run is still stored, the visualizer reports the *stored* state and permits **Load** or **Delete** instead of deploying a duplicate.
 
 The direct device requests below are only low-level smoke tests for the simulators. They are not the dynamic binding deployment demonstration.
 

@@ -737,7 +737,7 @@
             bindingButtons.deploy.disabled = deployment.state !== "not deployed";
             bindingButtons.load.disabled = deployment.state !== "stored";
             bindingButtons.remove.disabled = deployment.state !== "active";
-            bindingButtons.delete.disabled = deployment.state !== "stored";
+            bindingButtons.delete.disabled = deployment.state === "not deployed";
         }
 
         function inactiveBadgeText(node) {

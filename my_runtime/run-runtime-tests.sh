@@ -475,8 +475,20 @@ if run_capture "registeredBindings contains deployed simple-binding" http_get "/
     json_assert "deployed simple-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding")'
 fi
 
-if run_capture "Reject deletion while deployed binding is loaded" action deleteBinding '{"id":"simple-binding"}'; then
-    json_assert "loaded deployed binding must be removed before deletion" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("currently loaded")'
+if run_capture "Delete active simple-binding directly" action deleteBinding '{"id":"simple-binding"}'; then
+    json_assert "active simple-binding is deactivated and deleted" "$CURRENT_OUTPUT" 'data.result === true'
+fi
+
+if run_capture "Read registeredBindings after direct deletion" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "direct deletion unregisters active simple-binding" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+fi
+
+if run_capture "Read bindingStates after direct deletion" http_get "/runtime/properties/bindingStates"; then
+    json_assert "direct deletion returns simple-binding to not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+fi
+
+if run_capture "Redeploy simple-binding after direct deletion" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+    json_assert "simple-binding redeployment result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
 if run_capture "Remove deployed simple-binding" action removeBinding '{"id":"simple-binding"}'; then

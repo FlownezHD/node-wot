@@ -100,7 +100,7 @@ The Runtime Thing provides the following lifecycle actions:
 | `checkBindingCompatibility` | Validate a transferred binding package without storing or executing it |
 | `addBinding` | Change a stored binding to the active state by registering it in the Servient |
 | `removeBinding` | Change an active binding to the stored state while retaining its files |
-| `deleteBinding` | Delete a stored binding previously installed through `deployBinding` |
+| `deleteBinding` | Deactivate an active binding if necessary and delete its runtime-side files |
 
 The binding lifecycle uses three states consistently:
 
@@ -110,7 +110,7 @@ The binding lifecycle uses three states consistently:
 | `stored` | Yes | No |
 | `active` | Yes | Yes |
 
-`deployBinding` changes a binding from `not deployed` to `active`. `removeBinding` changes it from `active` to `stored`, `addBinding` changes it from `stored` back to `active`, and `deleteBinding` changes it from `stored` to `not deployed`. The terms *load* and *remove* describe lifecycle operations; the resulting binding states are named *active* and *stored*.
+`deployBinding` changes a binding from `not deployed` to `active`. `removeBinding` changes it from `active` to `stored`, and `addBinding` changes it from `stored` back to `active`. `deleteBinding` changes either `stored` or `active` to `not deployed`; in the active case, it first unregisters the binding from the Servient. The terms *load* and *remove* describe lifecycle operations; the resulting binding states are named *active* and *stored*.
 
 `bindingStates` lists runtime-side packages in the `stored` or `active` state. A sender-side package whose ID is absent from this property is `not deployed` on that runtime.
 
@@ -266,15 +266,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   --data '{"id":"new-binding"}'
 ```
 
-Remove it again before deleting its files:
-
-```bash
-curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
-  -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
-```
-
-A stored binding can be deleted permanently:
+Delete the active binding and its runtime-side files:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deleteBinding \
@@ -282,7 +274,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/deleteBinding \
   --data '{"id":"new-binding"}'
 ```
 
-`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. An active binding must first be changed to the `stored` state before it can be deleted. Deleting it removes the runtime-side copy but does not modify the original package under `my_bindings` on the sender side.
+`deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. If the binding is `active`, the action first stops and unregisters its dynamic Server and ClientFactory and then deletes the files. If it is already `stored`, only the files are deleted. In both cases, the resulting state is `not deployed`. Deleting the runtime-side copy does not modify the original package under `my_bindings` on the sender side.
 
 ## 7. Available Demo Bindings
 
