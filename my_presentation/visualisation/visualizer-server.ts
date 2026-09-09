@@ -24,9 +24,10 @@ type BindingInfo = {
     id?: string;
 };
 
+type BindingLifecycleState = "not deployed" | "stored" | "active";
+
 type BindingDeploymentStatus = CheckResult & {
-    deployed: boolean;
-    loaded: boolean;
+    state: BindingLifecycleState;
 };
 
 type ProtocolInfo = {
@@ -85,8 +86,8 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
     const appStatus = await checkGet("/energydemoapplication", "EnergyDemoApplication", "Presentation application Thing");
     const registeredBindings = await getRegisteredBindings();
     const protocols = await getSupportedProtocols();
-    const newBindingLoaded = registeredBindings.some((binding) => binding.id === "new-binding");
-    const newBindingStatus = await getNewBindingStatus(newBindingLoaded);
+    const newBindingActive = registeredBindings.some((binding) => binding.id === "new-binding");
+    const newBindingStatus = await getNewBindingStatus(newBindingActive);
     const coapProtocols = protocols.filter((protocol) => protocol.scheme === "coap");
     const coapSupported = coapProtocols.length > 0;
 
@@ -99,7 +100,7 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
         appStatus.active &&
         newMeterStatus.active &&
         !newMeterRead.active &&
-        !newBindingLoaded &&
+        !newBindingActive &&
         isMissingBindingMessage(newMeterRead.message);
 
     return {
@@ -145,7 +146,7 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
                 blockedByMissingBinding: newMeterBlockedByMissingBinding,
             },
             runtimeToNewBinding: {
-                active: newBindingLoaded,
+                active: newBindingActive,
                 protocol: "dynamic binding loading",
             },
             runtimeToCoapSupport: {
@@ -155,8 +156,7 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
         },
         protocols: protocols as unknown as JsonValue,
         bindingDeployment: {
-            deployed: newBindingStatus.deployed,
-            loaded: newBindingStatus.loaded,
+            state: newBindingStatus.state,
             senderPackage: "my_bindings/new-binding",
         },
     };
@@ -196,14 +196,13 @@ async function executeBindingAction(
     return requestJson("POST", `/runtime/actions/${runtimeAction}`, { id: "new-binding" });
 }
 
-async function getNewBindingStatus(loaded: boolean): Promise<BindingDeploymentStatus> {
-    if (loaded) {
+async function getNewBindingStatus(active: boolean): Promise<BindingDeploymentStatus> {
+    if (active) {
         return {
             active: true,
-            deployed: true,
-            loaded: true,
+            state: "active",
             label: "new-binding",
-            message: "Deployed and loaded in the shared Servient",
+            message: "Active in the shared Servient",
         };
     }
 
@@ -214,8 +213,7 @@ async function getNewBindingStatus(loaded: boolean): Promise<BindingDeploymentSt
     if (!compatibility.ok || compatibility.value == null || typeof compatibility.value !== "object") {
         return {
             active: false,
-            deployed: false,
-            loaded: false,
+            state: "not deployed",
             label: "new-binding",
             message: compatibility.ok ? "Deployment state unavailable" : compatibility.error,
         };
@@ -225,14 +223,13 @@ async function getNewBindingStatus(loaded: boolean): Promise<BindingDeploymentSt
     const missingRequirements = Array.isArray(details.missingRequirements)
         ? details.missingRequirements.filter((entry): entry is string => typeof entry === "string")
         : [];
-    const deployed = !missingRequirements.some((entry) => /was not found in the runtime deployment store/i.test(entry));
+    const stored = !missingRequirements.some((entry) => /was not found in the runtime deployment store/i.test(entry));
 
     return {
         active: false,
-        deployed,
-        loaded: false,
+        state: stored ? "stored" : "not deployed",
         label: "new-binding",
-        message: deployed ? "Deployed in runtime storage, currently not loaded" : "Not deployed",
+        message: stored ? "Stored in runtime storage" : "Not deployed",
         details: compatibility.value,
     };
 }

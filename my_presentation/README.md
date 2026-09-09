@@ -54,7 +54,7 @@ The actual demonstration should use the `EnergyDemoApplication` Thing as the app
 
 1. `EnergyDemoApplication` reads the battery storage over standard CoAP/UDP.
 2. `EnergyDemoApplication` reads the old meter over standard CoAP/UDP.
-3. `EnergyDemoApplication` tries to read the replacement meter over `new://` and fails because `new-binding` is not loaded yet.
+3. `EnergyDemoApplication` tries to read the replacement meter over `new://` and fails because `new-binding` is not active yet.
 4. The management client sends the manifest and complete JavaScript source to `Runtime.deployBinding`.
 5. `Runtime` validates the manifest, checks the downward interface requirements, stores the received files, and dynamically registers `new-binding` in the shared Servient.
 6. `EnergyDemoApplication` reads the replacement meter over TCP successfully because it uses the same Servient.
@@ -100,9 +100,9 @@ Read the replacement meter again:
 curl -i -X POST http://localhost:8080/energydemoapplication/actions/readNewMeter
 ```
 
-The same flow can be presented through <http://localhost:9200>: **Deploy** performs the transfer, **Unload** removes the binding from the active Servient while retaining its files, **Load** invokes `addBinding` for that already deployed package, and **Delete** removes an unloaded package from runtime storage. The topology distinguishes the states *not deployed*, *deployed*, and *active*.
+The same flow can be presented through <http://localhost:9200>: **Deploy** performs the transfer and activates the binding, **Unload** changes it from *active* to *stored* while retaining its files, **Load** changes it from *stored* back to *active*, and **Delete** changes it from *stored* to *not deployed*. The topology consistently distinguishes the states *not deployed*, *stored*, and *active*.
 
-For a repeatable transfer demonstration, use **Unload** and then **Delete** after the presentation. If the runtime starts while a package from an earlier run is still stored, the visualizer reports it as deployed and permits **Load** or **Delete** instead of deploying a duplicate.
+For a repeatable transfer demonstration, use **Unload** and then **Delete** after the presentation. If the runtime starts while a package from an earlier run is still stored, the visualizer reports the *stored* state and permits **Load** or **Delete** instead of deploying a duplicate.
 
 The direct device requests below are only low-level smoke tests for the simulators. They are not the dynamic binding deployment demonstration.
 

@@ -97,9 +97,19 @@ The Runtime Thing provides the following lifecycle actions:
 | --- | --- |
 | `deployBinding` | Transfer a manifest and JavaScript entrypoint, install the binding, and load it |
 | `checkBindingCompatibility` | Validate the requirements of an installed binding without loading it |
-| `addBinding` | Load a binding already present in the runtime deployment store by ID |
-| `removeBinding` | Unregister a loaded binding while retaining its files |
-| `deleteBinding` | Delete an unloaded binding previously installed through `deployBinding` |
+| `addBinding` | Change a stored binding to the active state by registering it in the Servient |
+| `removeBinding` | Change an active binding to the stored state while retaining its files |
+| `deleteBinding` | Delete a stored binding previously installed through `deployBinding` |
+
+The binding lifecycle uses three states consistently:
+
+| State | Runtime-side files | Registered in the Servient |
+| --- | --- | --- |
+| `not deployed` | No | No |
+| `stored` | Yes | No |
+| `active` | Yes | Yes |
+
+`deployBinding` changes a binding from `not deployed` to `active`. `removeBinding` changes it from `active` to `stored`, `addBinding` changes it from `stored` back to `active`, and `deleteBinding` changes it from `stored` to `not deployed`. The terms *load* and *remove* describe lifecycle operations; the resulting binding states are named *active* and *stored*.
 
 ## 5. Binding Manifest Model
 

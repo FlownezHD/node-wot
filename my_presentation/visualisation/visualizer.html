@@ -279,7 +279,7 @@
             background: #fde68a;
         }
 
-        .badge.deployed {
+        .badge.stored {
             color: #082f49;
             background: #7dd3fc;
         }
@@ -638,13 +638,13 @@
             renderProtocolRows(data.protocols || []);
             renderStatusRows(data.nodes);
             renderLatestReading(data.nodes);
-            renderDeployment(data.bindingDeployment || { deployed: false, loaded: false });
+            renderDeployment(data.bindingDeployment || { state: "not deployed" });
         }
 
         function updateNode(element, node) {
             const badge = element.querySelector(".badge");
             element.classList.remove("active", "warn", "off");
-            badge.classList.remove("ok", "warn", "off");
+            badge.classList.remove("ok", "warn", "stored", "off");
 
             if (node.active) {
                 element.classList.add("active");
@@ -653,10 +653,10 @@
                 return;
             }
 
-            if (node.deployed) {
+            if (node.state === "stored") {
                 element.classList.add("warn");
-                badge.classList.add("deployed");
-                badge.textContent = "deployed";
+                badge.classList.add("stored");
+                badge.textContent = "stored";
                 return;
             }
 
@@ -709,32 +709,35 @@
                     node.message,
                     node.active,
                     isBlockedMessage(node.message),
-                    node.deployed && !node.loaded
+                    node.state === "stored"
                 ))
                 .join("");
         }
 
         function renderDeployment(deployment) {
-            const deployedOnly = deployment.deployed && !deployment.loaded;
-            const title = deployment.loaded ? "Loaded" : deployedOnly ? "Stored" : "Not deployed";
-            const message = deployment.loaded
+            const title = deployment.state === "active"
+                ? "Active"
+                : deployment.state === "stored"
+                    ? "Stored"
+                    : "Not deployed";
+            const message = deployment.state === "active"
                 ? "new-binding is registered in the shared Servient."
-                : deployedOnly
+                : deployment.state === "stored"
                     ? "The transferred package remains in runtime storage."
                     : "The package is available only on the sender side.";
 
             document.getElementById("deploymentState").innerHTML = rowTemplate(
                 title,
                 message,
-                deployment.loaded,
+                deployment.state === "active",
                 false,
-                deployedOnly
+                deployment.state === "stored"
             );
 
-            bindingButtons.deploy.disabled = deployment.deployed;
-            bindingButtons.load.disabled = !deployment.deployed || deployment.loaded;
-            bindingButtons.remove.disabled = !deployment.loaded;
-            bindingButtons.delete.disabled = !deployment.deployed || deployment.loaded;
+            bindingButtons.deploy.disabled = deployment.state !== "not deployed";
+            bindingButtons.load.disabled = deployment.state !== "stored";
+            bindingButtons.remove.disabled = deployment.state !== "active";
+            bindingButtons.delete.disabled = deployment.state !== "stored";
         }
 
         function inactiveBadgeText(node) {
@@ -745,9 +748,9 @@
             return /no ClientFactory|missing .*binding|binding .*missing|blocked/i.test(message || "");
         }
 
-        function rowTemplate(title, message, active, warning, deployed = false) {
-            const badgeClass = active ? "ok" : deployed ? "deployed" : warning ? "warn" : "off";
-            const badgeText = active ? "active" : deployed ? "deployed" : warning ? "blocked" : "off";
+        function rowTemplate(title, message, active, warning, stored = false) {
+            const badgeClass = active ? "ok" : stored ? "stored" : warning ? "warn" : "off";
+            const badgeText = active ? "active" : stored ? "stored" : warning ? "blocked" : "off";
 
             return `
                 <div class="status-row">
