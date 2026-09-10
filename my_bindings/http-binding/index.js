@@ -23,7 +23,7 @@ function loadHttpBindingModule() {
     );
 }
 
-function createBinding() {
+function deployBinding() {
     const { HttpServer } = loadHttpBindingModule();
 
     return {
@@ -36,5 +36,5 @@ function createBinding() {
 }
 
 module.exports = {
-    createBinding
+    deployBinding
 };

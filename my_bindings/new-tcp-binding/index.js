@@ -476,7 +476,7 @@ function sendTcpMessage(host, port, message) {
     });
 }
 
-function createBinding() {
+function deployBinding() {
     return {
         id: "new-tcp-binding",
         schemes: ["new"],
@@ -490,5 +490,5 @@ function createBinding() {
 }
 
 module.exports = {
-    createBinding
+    deployBinding
 };

@@ -23,7 +23,7 @@ function loadCoapBindingModule() {
     );
 }
 
-function createBinding() {
+function deployBinding() {
     // Loads the selected node-wot CoAP module and uses its CoapServer implementation.
     const { CoapServer } = loadCoapBindingModule();
 
@@ -37,5 +37,5 @@ function createBinding() {
 }
 
 module.exports = {
-    createBinding
+    deployBinding
 };

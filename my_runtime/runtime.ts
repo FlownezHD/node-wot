@@ -107,7 +107,7 @@ type RuntimeBindingManifest = {
     requires: BindingRequirements;
 };
 
-//Output after createBinding()
+// Output returned by a binding package's deployBinding() export.
 type DynamicBinding = {
     id: string;
     createClientFactory?: () => RuntimeClientFactory;
@@ -116,9 +116,9 @@ type DynamicBinding = {
 
 // Supported CommonJS export shapes for a binding module.
 type BindingModule = {
-    createBinding?: () => DynamicBinding;
+    deployBinding?: () => DynamicBinding;
     default?: {
-        createBinding?: () => DynamicBinding;
+        deployBinding?: () => DynamicBinding;
     };
 };
 
@@ -646,13 +646,13 @@ function loadBinding(bindingId: string): {
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const bindingModule = require(entrypointPath) as BindingModule;
-    const createBinding = bindingModule.createBinding ?? bindingModule.default?.createBinding;
+    const deployBinding = bindingModule.deployBinding ?? bindingModule.default?.deployBinding;
 
-    if (typeof createBinding !== "function") {
-        throw new Error(`Binding '${bindingId}' entrypoint does not export createBinding().`);
+    if (typeof deployBinding !== "function") {
+        throw new Error(`Binding '${bindingId}' entrypoint does not export deployBinding().`);
     }
 
-    const binding = createBinding();
+    const binding = deployBinding();
 
     if (typeof binding?.id !== "string" || binding.id.length === 0) {
         throw new Error(`Binding '${bindingId}' returned an invalid binding definition.`);

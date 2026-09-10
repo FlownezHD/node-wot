@@ -14,7 +14,7 @@ class InvalidClientFactory {
     }
 }
 
-function createBinding() {
+function deployBinding() {
     return {
         id: "wrong-binding",
         createClientFactory() {
@@ -25,5 +25,5 @@ function createBinding() {
 }
 
 module.exports = {
-    createBinding
+    deployBinding
 };

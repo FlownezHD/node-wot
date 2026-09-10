@@ -227,7 +227,7 @@ class TestClientFactory {
     init() { return true; }
     destroy() { return true; }
 }
-module.exports.createBinding = () => ({
+module.exports.deployBinding = () => ({
     id: ${JSON.stringify(id)},
     createClientFactory: () => new TestClientFactory()
 });
@@ -257,7 +257,7 @@ if (scenario === "empty-source") {
 } else if (scenario === "missing-export") {
     source = "module.exports = {};";
 } else if (scenario === "id-mismatch") {
-    source = `module.exports.createBinding = () => ({ id: "different-binding" });`;
+    source = `module.exports.deployBinding = () => ({ id: "different-binding" });`;
 }
 
 process.stdout.write(JSON.stringify({ manifest, source }));
@@ -699,8 +699,8 @@ test_rejected_deployment \
 test_rejected_deployment \
     missing-export \
     missing-export-binding \
-    'data.result === false && data.message.includes("does not export createBinding")' \
-    "missing createBinding export"
+    'data.result === false && data.message.includes("does not export deployBinding")' \
+    "missing deployBinding export"
 
 test_rejected_deployment \
     id-mismatch \
