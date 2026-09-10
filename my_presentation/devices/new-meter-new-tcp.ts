@@ -12,7 +12,7 @@ type NewMeter = {
     updatedAt: string;
 };
 
-type NewBindingRequest = {
+type NewTcpBindingRequest = {
     op?: string;
     path?: string;
     name?: string;
@@ -25,7 +25,7 @@ type WireResponse = {
     error?: string;
 };
 
-const port = Number(process.env.NEW_METER_NEW_PORT || 9103);
+const port = Number(process.env.NEW_METER_NEW_TCP_PORT || 9103);
 const bindAddress = process.env.NEW_METER_BIND_ADDRESS || "127.0.0.1";
 const publicHost = process.env.NEW_METER_HOST || "localhost";
 const thingPath = "new-electricity-meter-01";
@@ -59,7 +59,7 @@ function createThingDescription(): Record<string, unknown> {
         "@context": "https://www.w3.org/2022/wot/td/v1.1",
         title: "NewElectricityMeter01",
         id: "urn:poc:meter:new:01",
-        description: "Replacement electricity meter exposed through the custom raw TCP new-binding protocol.",
+        description: "Replacement electricity meter exposed through the custom raw TCP new-tcp-binding protocol.",
         securityDefinitions: {
             nosec_sc: {
                 scheme: "nosec",
@@ -106,7 +106,7 @@ async function handleSocket(socket: net.Socket): Promise<void> {
     }
 }
 
-function handleMessage(request: NewBindingRequest): WireResponse {
+function handleMessage(request: NewTcpBindingRequest): WireResponse {
     if (request.path !== thingPath) {
         return { ok: false, error: "Thing not found." };
     }
@@ -140,7 +140,7 @@ function handleMessage(request: NewBindingRequest): WireResponse {
     return { ok: false, error: `Unsupported operation '${request.op}'.` };
 }
 
-function readJsonLine(socket: net.Socket): Promise<NewBindingRequest> {
+function readJsonLine(socket: net.Socket): Promise<NewTcpBindingRequest> {
     return new Promise((resolve, reject) => {
         let buffer = "";
         let completed = false;
@@ -153,7 +153,7 @@ function readJsonLine(socket: net.Socket): Promise<NewBindingRequest> {
             completed = true;
 
             try {
-                resolve(JSON.parse(line) as NewBindingRequest);
+                resolve(JSON.parse(line) as NewTcpBindingRequest);
             } catch (error) {
                 reject(error);
             }

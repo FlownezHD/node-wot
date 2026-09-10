@@ -42,7 +42,7 @@ const port = Number(process.env.VISUALIZER_PORT || 9200);
 const runtimeBaseUrl = process.env.RUNTIME_HTTP || "http://localhost:8080";
 const newMeterTdUri = process.env.NEW_METER_TD ?? "new://localhost:9103/new-electricity-meter-01";
 const htmlPath = path.resolve(__dirname, "visualizer.html");
-const newBindingPath = path.resolve(__dirname, "../../my_bindings/new-binding");
+const newTcpBindingPath = path.resolve(__dirname, "../../my_bindings/new-tcp-binding");
 
 const server = http.createServer((req, res) => {
     void handleRequest(req, res);
@@ -87,9 +87,9 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
     const appStatus = await checkGet("/energydemoapplication", "EnergyDemoApplication", "Presentation application Thing");
     const bindingStates = await getBindingStates();
     const protocols = await getSupportedProtocols();
-    const newBindingState = bindingStates.find((binding) => binding.id === "new-binding")?.state ?? "not deployed";
-    const newBindingActive = newBindingState === "active";
-    const newBindingStatus = getNewBindingStatus(newBindingState);
+    const newTcpBindingState = bindingStates.find((binding) => binding.id === "new-tcp-binding")?.state ?? "not deployed";
+    const newTcpBindingActive = newTcpBindingState === "active";
+    const newTcpBindingStatus = getNewTcpBindingStatus(newTcpBindingState);
     const coapProtocols = protocols.filter((protocol) => protocol.scheme === "coap");
     const coapSupported = coapProtocols.length > 0;
 
@@ -102,7 +102,7 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
         appStatus.active &&
         newMeterStatus.active &&
         !newMeterRead.active &&
-        !newBindingActive &&
+        !newTcpBindingActive &&
         isMissingBindingMessage(newMeterRead.message);
 
     return {
@@ -117,12 +117,12 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
                 message: coapSupported ? "Native node-wot CoAP/UDP support" : "Not reported by runtimeCapabilities",
                 details: coapProtocols as unknown as JsonValue,
             },
-            newBinding: {
-                ...newBindingStatus,
+            newTcpBinding: {
+                ...newTcpBindingStatus,
                 details: {
-                    senderPackage: "my_bindings/new-binding",
-                    runtimeStorage: "my_runtime/deployed-bindings/new-binding",
-                    compatibility: newBindingStatus.details ?? null,
+                    senderPackage: "my_bindings/new-tcp-binding",
+                    runtimeStorage: "my_runtime/deployed-bindings/new-tcp-binding",
+                    compatibility: newTcpBindingStatus.details ?? null,
                 },
             },
             battery: batteryRead,
@@ -147,8 +147,8 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
                 protocol: "new:// / TCP",
                 blockedByMissingBinding: newMeterBlockedByMissingBinding,
             },
-            runtimeToNewBinding: {
-                active: newBindingActive,
+            runtimeToNewTcpBinding: {
+                active: newTcpBindingActive,
                 protocol: "dynamic binding loading",
             },
             runtimeToCoapSupport: {
@@ -158,14 +158,14 @@ async function collectStatus(): Promise<Record<string, JsonValue>> {
         },
         protocols: protocols as unknown as JsonValue,
         bindingDeployment: {
-            state: newBindingStatus.state,
-            senderPackage: "my_bindings/new-binding",
+            state: newTcpBindingStatus.state,
+            senderPackage: "my_bindings/new-tcp-binding",
         },
     };
 }
 
 function getBindingAction(pathname: string): "deploy" | "load" | "remove" | "delete" | undefined {
-    const match = /^\/api\/bindings\/new-binding\/(deploy|load|remove|delete)$/.exec(pathname);
+    const match = /^\/api\/bindings\/new-tcp-binding\/(deploy|load|remove|delete)$/.exec(pathname);
     return match?.[1] as "deploy" | "load" | "remove" | "delete" | undefined;
 }
 
@@ -175,8 +175,8 @@ async function executeBindingAction(
     if (actionName === "deploy") {
         try {
             const [manifestText, source] = await Promise.all([
-                readFile(path.join(newBindingPath, "manifest.json"), "utf8"),
-                readFile(path.join(newBindingPath, "index.js"), "utf8"),
+                readFile(path.join(newTcpBindingPath, "manifest.json"), "utf8"),
+                readFile(path.join(newTcpBindingPath, "index.js"), "utf8"),
             ]);
             const manifest = JSON.parse(manifestText) as JsonValue;
 
@@ -184,7 +184,7 @@ async function executeBindingAction(
         } catch (error) {
             return {
                 ok: false,
-                error: error instanceof Error ? error.message : "Failed to create the new-binding deployment payload.",
+                error: error instanceof Error ? error.message : "Failed to create the new-tcp-binding deployment payload.",
             };
         }
     }
@@ -195,15 +195,15 @@ async function executeBindingAction(
         delete: "deleteBinding",
     }[actionName];
 
-    return requestJson("POST", `/runtime/actions/${runtimeAction}`, { id: "new-binding" });
+    return requestJson("POST", `/runtime/actions/${runtimeAction}`, { id: "new-tcp-binding" });
 }
 
-function getNewBindingStatus(state: BindingLifecycleState): BindingDeploymentStatus {
+function getNewTcpBindingStatus(state: BindingLifecycleState): BindingDeploymentStatus {
     if (state === "active") {
         return {
             active: true,
             state: "active",
-            label: "new-binding",
+            label: "new-tcp-binding",
             message: "Active in the shared Servient",
         };
     }
@@ -211,7 +211,7 @@ function getNewBindingStatus(state: BindingLifecycleState): BindingDeploymentSta
     return {
         active: false,
         state,
-        label: "new-binding",
+        label: "new-tcp-binding",
         message: state === "stored" ? "Stored in runtime storage" : "Not deployed",
     };
 }

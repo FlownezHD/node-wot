@@ -84,7 +84,7 @@ function parseNewUrl(href) {
     };
 }
 
-class NewClient {
+class NewTcpClient {
     constructor() {
         this.scheme = "new";
     }
@@ -93,7 +93,7 @@ class NewClient {
         const target = parseNewUrl(form.href);
 
         if (target.resourceType !== "properties" || !target.resourceName) {
-            throw new Error("NewBinding readResource expects a property form.");
+            throw new Error("NewTcpBinding readResource expects a property form.");
         }
 
         return this.#request(target, {
@@ -108,7 +108,7 @@ class NewClient {
         const wireContent = await contentToWire(content);
 
         if (target.resourceType !== "properties" || !target.resourceName) {
-            throw new Error("NewBinding writeResource expects a property form.");
+            throw new Error("NewTcpBinding writeResource expects a property form.");
         }
 
         await this.#request(target, {
@@ -125,7 +125,7 @@ class NewClient {
         const wireContent = await contentToWire(content);
 
         if (target.resourceType !== "actions" || !target.resourceName) {
-            throw new Error("NewBinding invokeResource expects an action form.");
+            throw new Error("NewTcpBinding invokeResource expects an action form.");
         }
 
         return this.#request(target, {
@@ -138,11 +138,11 @@ class NewClient {
     }
 
     async unlinkResource() {
-        throw new Error("NewBinding does not support unlinkResource.");
+        throw new Error("NewTcpBinding does not support unlinkResource.");
     }
 
     async subscribeResource() {
-        throw new Error("NewBinding does not support subscriptions.");
+        throw new Error("NewTcpBinding does not support subscriptions.");
     }
 
     async requestThingDescription(uri) {
@@ -166,20 +166,20 @@ class NewClient {
         const response = await sendTcpMessage(target.host, target.port, message);
 
         if (response.ok !== true) {
-            throw new Error(response.error || "NewBinding request failed.");
+            throw new Error(response.error || "NewTcpBinding request failed.");
         }
 
         return contentFromWire(response.contentType, response.body);
     }
 }
 
-class NewClientFactory {
+class NewTcpClientFactory {
     constructor() {
         this.scheme = "new";
     }
 
     getClient() {
-        return new NewClient();
+        return new NewTcpClient();
     }
 
     init() {
@@ -191,7 +191,7 @@ class NewClientFactory {
     }
 }
 
-class NewServer {
+class NewTcpServer {
     constructor(config = {}) {
         this.scheme = "new";
         this.port = config.port || 8092;
@@ -478,13 +478,13 @@ function sendTcpMessage(host, port, message) {
 
 function createBinding() {
     return {
-        id: "new-binding",
+        id: "new-tcp-binding",
         schemes: ["new"],
         createClientFactory() {
-            return new NewClientFactory();
+            return new NewTcpClientFactory();
         },
         createServer() {
-            return new NewServer({ port: 8092 });
+            return new NewTcpServer({ port: 8092 });
         }
     };
 }

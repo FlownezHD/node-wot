@@ -1,12 +1,12 @@
 {
-    "id": "simple-binding",
-    "name": "Simple Binding",
+    "id": "http-binding",
+    "name": "HTTP Binding",
     "version": "1.0.0",
-    "description": "A simple custom protocol binding for testing dynamic binding loading.",
+    "description": "Dynamically loaded HTTP server binding based on an available HTTP protocol stack.",
     "entrypoint": "./index.js",
     "provides": {
-        "schemes": ["simple"],
-        "roles": ["client", "server"],
+        "schemes": ["http"],
+        "roles": ["server"],
         "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
     },
     "requires": {
@@ -15,11 +15,6 @@
                 "type": "protocol-stack",
                 "protocol": "http",
                 "direction": "server"
-            },
-            {
-                "type": "protocol-stack",
-                "protocol": "http",
-                "direction": "client"
             }
         ],
         "resources": {

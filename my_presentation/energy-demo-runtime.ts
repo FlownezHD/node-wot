@@ -66,7 +66,7 @@ async function main() {
             newMeterReading: {
                 type: "object",
                 readOnly: true,
-                description: "Replacement meter reading available after new-binding was transferred and activated dynamically.",
+                description: "Replacement meter reading available after new-tcp-binding was transferred and activated dynamically.",
             },
             deviceTargets: {
                 type: "object",

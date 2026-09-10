@@ -3,11 +3,11 @@
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
-SIMPLE_HOST="${SIMPLE_HOST:-127.0.0.1}"
-SIMPLE_PORT="${SIMPLE_PORT:-8091}"
-SIMPLE_BASE_URL="${SIMPLE_BASE_URL:-http://$SIMPLE_HOST:$SIMPLE_PORT}"
-NEW_HOST="${NEW_HOST:-127.0.0.1}"
-NEW_PORT="${NEW_PORT:-8092}"
+HTTP_BINDING_HOST="${HTTP_BINDING_HOST:-127.0.0.1}"
+HTTP_BINDING_PORT="${HTTP_BINDING_PORT:-8091}"
+HTTP_BINDING_BASE_URL="${HTTP_BINDING_BASE_URL:-http://$HTTP_BINDING_HOST:$HTTP_BINDING_PORT}"
+NEW_TCP_BINDING_HOST="${NEW_TCP_BINDING_HOST:-127.0.0.1}"
+NEW_TCP_BINDING_PORT="${NEW_TCP_BINDING_PORT:-8092}"
 COAP_HOST="${COAP_HOST:-127.0.0.1}"
 COAP_PORT="${COAP_PORT:-5684}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,8 +19,6 @@ PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
 CURRENT_OUTPUT=""
-
-export SIMPLE_HOST SIMPLE_PORT
 
 green=$'\033[32m'
 red=$'\033[31m'
@@ -112,9 +110,19 @@ http_get() {
     curl -fsS --max-time 8 "$BASE_URL$path"
 }
 
-simple_get() {
+http_binding_get() {
     local path="$1"
-    curl -fsS --max-time 8 "$SIMPLE_BASE_URL$path"
+    curl -fsS --max-time 8 "$HTTP_BINDING_BASE_URL$path"
+}
+
+http_binding_action() {
+    local action_name="$1"
+    local payload="$2"
+
+    curl -fsS --max-time 12 \
+        -X POST "$HTTP_BINDING_BASE_URL/runtime/actions/$action_name" \
+        -H "Content-Type: application/json" \
+        --data "$payload"
 }
 
 action() {
@@ -246,7 +254,7 @@ if (scenario === "empty-source") {
 } else if (scenario === "missing-interface") {
     manifest.requires.interfaces = [{ type: "protocol-stack", protocol: "amqp", direction: "client" }];
 } else if (scenario === "scheme-conflict") {
-    manifest.provides.schemes = ["simple"];
+    manifest.provides.schemes = ["http"];
 } else if (scenario === "port-conflict") {
     manifest.requires.resources.ports = [{ transport: "tcp", preferred: 8091, required: true, exclusive: true }];
 } else if (scenario === "syntax-error") {
@@ -341,19 +349,19 @@ req.end();
 ')
 }
 
-new_request() {
+new_tcp_binding_request() {
     local payload="$1"
 
-    NEW_HOST="$NEW_HOST" NEW_PORT="$NEW_PORT" NEW_PAYLOAD="$payload" node -e '
+    NEW_TCP_BINDING_HOST="$NEW_TCP_BINDING_HOST" NEW_TCP_BINDING_PORT="$NEW_TCP_BINDING_PORT" NEW_TCP_BINDING_PAYLOAD="$payload" node -e '
 const net = require("net");
-const host = process.env.NEW_HOST;
-const port = Number(process.env.NEW_PORT);
-const payload = process.env.NEW_PAYLOAD;
+const host = process.env.NEW_TCP_BINDING_HOST;
+const port = Number(process.env.NEW_TCP_BINDING_PORT);
+const payload = process.env.NEW_TCP_BINDING_PAYLOAD;
 const socket = net.connect(port, host);
 let out = "";
 
 const timer = setTimeout(() => {
-    console.error("New binding TCP request timed out.");
+    console.error("new-tcp-binding request timed out.");
     process.exit(1);
 }, 6000);
 
@@ -374,7 +382,7 @@ socket.on("data", (chunk) => {
 
     const response = JSON.parse(out.slice(0, newlineIndex));
     if (response.ok !== true) {
-        console.error(response.error || "New binding request failed.");
+        console.error(response.error || "new-tcp-binding request failed.");
         process.exit(1);
     }
 
@@ -411,9 +419,9 @@ if [[ "$FAIL_COUNT" -gt "$RUNTIME_REACHABILITY_FAILED" ]]; then
 fi
 
 section "Initial Cleanup"
-cleanup_deployed_binding simple-binding
+cleanup_deployed_binding http-binding
 cleanup_deployed_binding coap-binding
-cleanup_deployed_binding new-binding
+cleanup_deployed_binding new-tcp-binding
 cleanup_deployed_binding wrong-binding
 cleanup_deployed_binding missing-interface-binding
 cleanup_deployed_binding manifest-string-binding
@@ -447,88 +455,88 @@ if run_capture "Read runtimeCapabilities property" http_get "/runtime/properties
 fi
 
 section "WoT Binding Deployment"
-if run_capture "Loading simple-binding before deployment fails" action addBinding '{"id":"simple-binding"}'; then
-    json_assert "simple-binding is initially absent from runtime storage" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+if run_capture "Loading http-binding before deployment fails" action addBinding '{"id":"http-binding"}'; then
+    json_assert "http-binding is initially absent from runtime storage" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
 fi
 
-if run_capture "Create simple-binding deployment payload" create_deployment_payload simple-binding; then
+if run_capture "Create http-binding deployment payload" create_deployment_payload http-binding; then
     DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
 
-    if run_capture "Check external simple-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
-        json_assert "external simple-binding package is compatible" "$CURRENT_OUTPUT" 'data.id === "simple-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+    if run_capture "Check external http-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
+        json_assert "external http-binding package is compatible" "$CURRENT_OUTPUT" 'data.id === "http-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
     fi
 
     if run_capture "Read bindingStates after compatibility check" http_get "/runtime/properties/bindingStates"; then
-        json_assert "compatibility check leaves simple-binding not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+        json_assert "compatibility check leaves http-binding not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "http-binding")'
     fi
 
-    if run_capture "Deploy and load transferred simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+    if run_capture "Deploy and load transferred http-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
         json_assert "deployBinding result is true" "$CURRENT_OUTPUT" 'data.result === true'
     fi
 fi
 
-if run_capture "Read active simple-binding state" http_get "/runtime/properties/bindingStates"; then
-    json_assert "deployed simple-binding state is active" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding" && binding.state === "active")'
+if run_capture "Read active http-binding state" http_get "/runtime/properties/bindingStates"; then
+    json_assert "deployed http-binding state is active" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "http-binding" && binding.state === "active")'
 fi
 
-if run_capture "registeredBindings contains deployed simple-binding" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "deployed simple-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding")'
+if run_capture "registeredBindings contains deployed http-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "deployed http-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "http-binding")'
 fi
 
-if run_capture "Delete active simple-binding directly" action deleteBinding '{"id":"simple-binding"}'; then
-    json_assert "active simple-binding is deactivated and deleted" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Delete active http-binding directly" action deleteBinding '{"id":"http-binding"}'; then
+    json_assert "active http-binding is deactivated and deleted" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
 if run_capture "Read registeredBindings after direct deletion" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "direct deletion unregisters active simple-binding" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+    json_assert "direct deletion unregisters active http-binding" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "http-binding")'
 fi
 
 if run_capture "Read bindingStates after direct deletion" http_get "/runtime/properties/bindingStates"; then
-    json_assert "direct deletion returns simple-binding to not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+    json_assert "direct deletion returns http-binding to not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "http-binding")'
 fi
 
-if run_capture "Redeploy simple-binding after direct deletion" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
-    json_assert "simple-binding redeployment result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Redeploy http-binding after direct deletion" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+    json_assert "http-binding redeployment result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Remove deployed simple-binding" action removeBinding '{"id":"simple-binding"}'; then
-    json_assert "deployed simple-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Remove deployed http-binding" action removeBinding '{"id":"http-binding"}'; then
+    json_assert "deployed http-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "registeredBindings excludes removed simple-binding" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "removed simple-binding is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+if run_capture "registeredBindings excludes removed http-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "removed http-binding is no longer registered" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "http-binding")'
 fi
 
-if run_capture "Read stored simple-binding state" http_get "/runtime/properties/bindingStates"; then
-    json_assert "removed simple-binding state is stored" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding" && binding.state === "stored")'
+if run_capture "Read stored http-binding state" http_get "/runtime/properties/bindingStates"; then
+    json_assert "removed http-binding state is stored" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "http-binding" && binding.state === "stored")'
 fi
 
-if run_capture "Reject duplicate deployment of installed simple-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
+if run_capture "Reject duplicate deployment of installed http-binding" action deployBinding "$DEPLOYMENT_PAYLOAD"; then
     json_assert "duplicate deployment is rejected without replacing installed files" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("already deployed")'
 fi
 
-if run_capture "Recheck sender-side simple-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
-    json_assert "stored runtime copy is not used by compatibility check" "$CURRENT_OUTPUT" 'data.id === "simple-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
+if run_capture "Recheck sender-side http-binding package compatibility" action checkBindingCompatibility "$DEPLOYMENT_PAYLOAD"; then
+    json_assert "stored runtime copy is not used by compatibility check" "$CURRENT_OUTPUT" 'data.id === "http-binding" && data.compatible === true && data.missingRequirements.length === 0 && data.conflicts.length === 0'
 fi
 
-if run_capture "Reload deployed simple-binding with addBinding" action addBinding '{"id":"simple-binding"}'; then
-    json_assert "deployed simple-binding reload result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Reload deployed http-binding with addBinding" action addBinding '{"id":"http-binding"}'; then
+    json_assert "deployed http-binding reload result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Remove reloaded simple-binding" action removeBinding '{"id":"simple-binding"}'; then
-    json_assert "reloaded simple-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Remove reloaded http-binding" action removeBinding '{"id":"http-binding"}'; then
+    json_assert "reloaded http-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Delete deployed simple-binding" action deleteBinding '{"id":"simple-binding"}'; then
-    json_assert "deployed simple-binding delete result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Delete deployed http-binding" action deleteBinding '{"id":"http-binding"}'; then
+    json_assert "deployed http-binding delete result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Loading deleted simple-binding fails" action addBinding '{"id":"simple-binding"}'; then
-    json_assert "deleted simple-binding is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
+if run_capture "Loading deleted http-binding fails" action addBinding '{"id":"http-binding"}'; then
+    json_assert "deleted http-binding is no longer available" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
 fi
 
 if run_capture "Read bindingStates after deletion" http_get "/runtime/properties/bindingStates"; then
-    json_assert "deleted simple-binding state is not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "simple-binding")'
+    json_assert "deleted http-binding state is not deployed" "$CURRENT_OUTPUT" 'data.every((binding) => binding.id !== "http-binding")'
 fi
 
 section "CoAP Binding"
@@ -558,79 +566,65 @@ fi
 
 expect_failure "CoAP endpoint is unavailable after removal" coap_request "coap://$COAP_HOST:$COAP_PORT/runtime/properties/status"
 
-section "Simple Binding"
-if run_capture "Create simple-binding deployment payload" create_deployment_payload simple-binding; then
-    SIMPLE_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
+section "HTTP Binding"
+if run_capture "Create http-binding deployment payload" create_deployment_payload http-binding; then
+    HTTP_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
 
-    if run_capture "Deploy simple-binding" action deployBinding "$SIMPLE_DEPLOYMENT_PAYLOAD"; then
-        json_assert "simple-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    if run_capture "Deploy http-binding" action deployBinding "$HTTP_DEPLOYMENT_PAYLOAD"; then
+        json_assert "http-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
     fi
 fi
 
-if run_capture "registeredBindings contains simple-binding" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "simple-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "simple-binding")'
+if run_capture "registeredBindings contains http-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "http-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "http-binding")'
 fi
 
-if run_capture "Read Runtime TD over Simple server" simple_get "/runtime"; then
-    json_assert "Simple server TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
+if run_capture "Read Runtime TD over dynamic HTTP server" http_binding_get "/runtime"; then
+    json_assert "Dynamic HTTP server TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
 fi
 
-if run_capture "Read status over Simple server" simple_get "/runtime/properties/status"; then
-    contains_assert "Simple server status indicates running" "$CURRENT_OUTPUT" "running"
+if run_capture "Read status over dynamic HTTP server" http_binding_get "/runtime/properties/status"; then
+    contains_assert "Dynamic HTTP server status indicates running" "$CURRENT_OUTPUT" "running"
 fi
 
-if run_capture "Read registeredBindings over Simple server" simple_get "/runtime/properties/registeredBindings"; then
-    json_assert "Simple server registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
+if run_capture "Read registeredBindings over dynamic HTTP server" http_binding_get "/runtime/properties/registeredBindings"; then
+    json_assert "Dynamic HTTP server registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
 fi
 
-run_capture "Simple client smoke test" node "$ROOT_DIR/my_runtime/simple-client-test.js"
-
-if run_capture "Simple client reads TD" node "$ROOT_DIR/my_runtime/simple-client-test.js" td; then
-    json_assert "Simple client TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
+if run_capture "Dynamic HTTP server adds coap-binding" http_binding_action addBinding '{"id":"coap-binding"}'; then
+    json_assert "Dynamic HTTP server add coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Simple client reads status" node "$ROOT_DIR/my_runtime/simple-client-test.js" read status; then
-    contains_assert "Simple client status indicates running" "$CURRENT_OUTPUT" "running"
+if run_capture "Dynamic HTTP server removes coap-binding" http_binding_action removeBinding '{"id":"coap-binding"}'; then
+    json_assert "Dynamic HTTP server remove coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-if run_capture "Simple client reads registeredBindings" node "$ROOT_DIR/my_runtime/simple-client-test.js" read registeredBindings; then
-    json_assert "Simple client registeredBindings is an array" "$CURRENT_OUTPUT" 'Array.isArray(data)'
-fi
+section "New TCP Binding"
+if run_capture "Create new-tcp-binding deployment payload" create_deployment_payload new-tcp-binding; then
+    NEW_TCP_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
 
-if run_capture "Simple client adds coap-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action addBinding '{"id":"coap-binding"}'; then
-    json_assert "Simple client add coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
-fi
-
-if run_capture "Simple client removes coap-binding" node "$ROOT_DIR/my_runtime/simple-client-test.js" action removeBinding '{"id":"coap-binding"}'; then
-    json_assert "Simple client remove coap result is true" "$CURRENT_OUTPUT" 'data.result === true'
-fi
-
-section "New Raw TCP Binding"
-if run_capture "Create new-binding deployment payload" create_deployment_payload new-binding; then
-    NEW_DEPLOYMENT_PAYLOAD="$CURRENT_OUTPUT"
-
-    if run_capture "Deploy new-binding" action deployBinding "$NEW_DEPLOYMENT_PAYLOAD"; then
-        json_assert "new-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
+    if run_capture "Deploy new-tcp-binding" action deployBinding "$NEW_TCP_DEPLOYMENT_PAYLOAD"; then
+        json_assert "new-tcp-binding deploy result is true" "$CURRENT_OUTPUT" 'data.result === true'
     fi
 fi
 
-if run_capture "registeredBindings contains new-binding" http_get "/runtime/properties/registeredBindings"; then
-    json_assert "new-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "new-binding")'
+if run_capture "registeredBindings contains new-tcp-binding" http_get "/runtime/properties/registeredBindings"; then
+    json_assert "new-tcp-binding is registered" "$CURRENT_OUTPUT" 'data.some((binding) => binding.id === "new-tcp-binding")'
 fi
 
-if run_capture "Read Runtime TD over new raw TCP binding" new_request '{"op":"readThingDescription","path":"runtime"}'; then
-    json_assert "New binding TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
+if run_capture "Read Runtime TD over new-tcp-binding" new_tcp_binding_request '{"op":"readThingDescription","path":"runtime"}'; then
+    json_assert "new-tcp-binding TD contains title Runtime" "$CURRENT_OUTPUT" 'data.title === "Runtime"'
 fi
 
-if run_capture "Read status over new raw TCP binding" new_request '{"op":"readProperty","path":"runtime","name":"status"}'; then
-    contains_assert "New binding status indicates running" "$CURRENT_OUTPUT" "running"
+if run_capture "Read status over new-tcp-binding" new_tcp_binding_request '{"op":"readProperty","path":"runtime","name":"status"}'; then
+    contains_assert "new-tcp-binding status indicates running" "$CURRENT_OUTPUT" "running"
 fi
 
-if run_capture "Remove new-binding" action removeBinding '{"id":"new-binding"}'; then
-    json_assert "new-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+if run_capture "Remove new-tcp-binding" action removeBinding '{"id":"new-tcp-binding"}'; then
+    json_assert "new-tcp-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-expect_failure "New raw TCP endpoint is unavailable after removal" new_request '{"op":"readProperty","path":"runtime","name":"status"}'
+expect_failure "new-tcp-binding endpoint is unavailable after removal" new_tcp_binding_request '{"op":"readProperty","path":"runtime","name":"status"}'
 
 section "Negative Deployment Input Validation"
 if run_capture "Create string-encoded manifest payload" create_negative_deployment_payload manifest-string; then
@@ -671,8 +665,8 @@ test_rejected_deployment \
     "unsafe binding entrypoint"
 
 section "Negative Deployment Compatibility"
-if run_capture "Compatibility conflict for external simple-binding package" action checkBindingCompatibility "$SIMPLE_DEPLOYMENT_PAYLOAD"; then
-    json_assert "simple-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
+if run_capture "Compatibility conflict for external http-binding package" action checkBindingCompatibility "$HTTP_DEPLOYMENT_PAYLOAD"; then
+    json_assert "http-binding conflict is reported" "$CURRENT_OUTPUT" 'data.compatible === false && data.conflicts.length > 0'
 fi
 
 
@@ -691,7 +685,7 @@ test_rejected_deployment \
 test_rejected_deployment \
     scheme-conflict \
     scheme-conflict-binding \
-    'data.result === false && data.conflicts.some((item) => item.includes("Scheme") && item.includes("simple"))' \
+    'data.result === false && data.conflicts.some((item) => item.includes("Scheme") && item.includes("http"))' \
     "conflicting URI scheme"
 
 test_rejected_deployment \
@@ -731,17 +725,17 @@ if run_capture "Failed wrong-binding deployment is rolled back" action addBindin
     json_assert "wrong-binding is absent after rollback" "$CURRENT_OUTPUT" 'data.result === false && data.message.includes("was not found")'
 fi
 
-section "Simple Binding Cleanup"
-if run_capture "Remove simple-binding" action removeBinding '{"id":"simple-binding"}'; then
-    json_assert "simple-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
+section "HTTP Binding Cleanup"
+if run_capture "Remove http-binding" action removeBinding '{"id":"http-binding"}'; then
+    json_assert "http-binding remove result is true" "$CURRENT_OUTPUT" 'data.result === true'
 fi
 
-expect_failure "Simple server is unavailable after removal" simple_get "/runtime/properties/status"
+expect_failure "Dynamic HTTP server is unavailable after removal" http_binding_get "/runtime/properties/status"
 
 section "Final Cleanup"
-cleanup_deployed_binding simple-binding
+cleanup_deployed_binding http-binding
 cleanup_deployed_binding coap-binding
-cleanup_deployed_binding new-binding
+cleanup_deployed_binding new-tcp-binding
 cleanup_deployed_binding wrong-binding
 cleanup_deployed_binding missing-interface-binding
 cleanup_deployed_binding manifest-string-binding

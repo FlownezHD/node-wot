@@ -1,6 +1,6 @@
 {
-    "id": "new-binding",
-    "name": "New Raw TCP Binding",
+    "id": "new-tcp-binding",
+    "name": "New TCP Binding",
     "version": "1.0.0",
     "description": "Minimal dynamically loaded binding using a custom raw TCP protocol over stream sockets.",
     "entrypoint": "./index.js",

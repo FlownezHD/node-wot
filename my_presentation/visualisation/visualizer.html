@@ -498,7 +498,7 @@
                 <svg class="diagram" viewBox="0 0 980 640" preserveAspectRatio="none" aria-hidden="true">
                     <path id="link-runtime-app" class="link shared" d="M 290 303 L 360 303"></path>
                     <path id="link-runtime-coap" class="link coap" d="M 180 361 L 180 430"></path>
-                    <path id="link-runtime-binding" class="link binding" d="M 290 340 C 340 395, 400 430, 470 430"></path>
+                    <path id="link-runtime-new-tcp-binding" class="link binding" d="M 290 340 C 340 395, 400 430, 470 430"></path>
                     <path id="link-app-battery" class="link coap" d="M 580 285 C 650 220, 700 160, 790 140"></path>
                     <path id="link-app-old" class="link coap" d="M 580 314 C 660 314, 700 314, 790 314"></path>
                     <path id="link-app-new" class="link tcp" d="M 580 350 C 650 430, 700 500, 790 520"></path>
@@ -519,8 +519,8 @@
                     <p>Native node-wot protocol support available from startup.</p>
                 </article>
 
-                <article id="node-binding" class="node binding off">
-                    <h2>new-binding <span class="badge off">not deployed</span></h2>
+                <article id="node-new-tcp-binding" class="node binding off">
+                    <h2>new-tcp-binding <span class="badge off">not deployed</span></h2>
                     <p>Raw TCP package transferred from the sender through <code>deployBinding</code>.</p>
                 </article>
 
@@ -544,7 +544,7 @@
                 <section class="panel">
                     <h2>Binding Deployment</h2>
                     <div id="deploymentState"></div>
-                    <div class="deployment-path">my_bindings/new-binding -> Runtime.deployBinding</div>
+                    <div class="deployment-path">my_bindings/new-tcp-binding -> Runtime.deployBinding</div>
                     <div class="action-bar">
                         <button id="deployButton" type="button">Deploy</button>
                         <button id="loadButton" type="button">Load</button>
@@ -581,7 +581,7 @@
             runtime: document.getElementById("node-runtime"),
             energyDemo: document.getElementById("node-app"),
             coapSupport: document.getElementById("node-coap-support"),
-            newBinding: document.getElementById("node-binding"),
+            newTcpBinding: document.getElementById("node-new-tcp-binding"),
             battery: document.getElementById("node-battery"),
             oldMeter: document.getElementById("node-old-meter"),
             newMeter: document.getElementById("node-new-meter")
@@ -590,7 +590,7 @@
         const linkMap = {
             runtimeToEnergyDemo: document.getElementById("link-runtime-app"),
             runtimeToCoapSupport: document.getElementById("link-runtime-coap"),
-            runtimeToNewBinding: document.getElementById("link-runtime-binding"),
+            runtimeToNewTcpBinding: document.getElementById("link-runtime-new-tcp-binding"),
             energyDemoToBattery: document.getElementById("link-app-battery"),
             energyDemoToOldMeter: document.getElementById("link-app-old"),
             energyDemoToNewMeter: document.getElementById("link-app-new")
@@ -721,7 +721,7 @@
                     ? "Stored"
                     : "Not deployed";
             const message = deployment.state === "active"
-                ? "new-binding is registered in the shared Servient."
+                ? "new-tcp-binding is registered in the shared Servient."
                 : deployment.state === "stored"
                     ? "The transferred package remains in runtime storage."
                     : "The package is available only on the sender side.";
@@ -773,7 +773,7 @@
             }
 
             try {
-                const response = await fetch(`/api/bindings/new-binding/${action}`, {
+                const response = await fetch(`/api/bindings/new-tcp-binding/${action}`, {
                     method: "POST",
                     headers: { accept: "application/json" }
                 });

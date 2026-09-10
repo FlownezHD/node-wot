@@ -14,8 +14,8 @@ This directory contains the WoT runtime prototype for the dynamic protocol bindi
   - [6.2 Manage an Installed Binding](#62-manage-an-installed-binding)
 - [7. Available Demo Bindings](#7-available-demo-bindings)
   - [7.1 CoAP Binding](#71-coap-binding)
-  - [7.2 Simple Binding](#72-simple-binding)
-  - [7.3 New Raw TCP Binding](#73-new-raw-tcp-binding)
+  - [7.2 HTTP Binding](#72-http-binding)
+  - [7.3 New TCP Binding](#73-new-tcp-binding)
 - [8. Negative Tests](#8-negative-tests)
   - [8.1 Already Active Binding](#81-already-active-binding)
   - [8.2 Missing Runtime Interface](#82-missing-runtime-interface)
@@ -29,7 +29,6 @@ The prototype consists of:
 - `runtime.ts`: the management runtime exposed as the WoT Thing `Runtime`
 - `../my_bindings/*`: protocol binding packages located on the sender side
 - `deployed-bindings/*`: runtime-managed storage containing bindings received through `deployBinding`
-- `simple-client-test.js`: a small test client for the Simple Binding
 - `run-runtime-tests.sh`: scripted checks for the documented flows
 
 The runtime itself does not contain the example bindings and does not simulate industrial devices. It manages received protocol bindings in the active node-wot Servient. The `my_bindings` directory represents packages available to an external management client. The presentation scenario in `../my_presentation` uses this runtime together with an application Thing and simulated devices.
@@ -73,8 +72,8 @@ Relevant ports:
 | Port | Transport | Purpose |
 | --- | --- | --- |
 | `8080` | TCP | HTTP access to the management runtime |
-| `8091` | TCP | dynamically loaded Simple Binding server |
-| `8092` | TCP | dynamically loaded New Raw TCP Binding server |
+| `8091` | TCP | dynamically loaded HTTP Binding server |
+| `8092` | TCP | dynamically loaded New TCP Binding server |
 | `5683` | UDP | default node-wot CoAP server |
 | `5684` | UDP | dynamically loaded CoAP Binding server |
 
@@ -157,7 +156,7 @@ Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an 
 }
 ```
 
-The operations specify which abstract stream-socket capabilities the `new-binding` requires for its server and client roles.
+The operations specify which abstract stream-socket capabilities the `new-tcp-binding` requires for its server and client roles.
 
 Before activating a binding, the runtime validates the manifest and checks whether all requirements are compatible with the current runtime capabilities and resource state.
 
@@ -169,10 +168,10 @@ Before activating a binding, the runtime validates the manifest and checks wheth
 
 The packages in `my_bindings` represent files available to the sending management client. The runtime does not include `my_bindings` in its binding search path. Consequently, `addBinding` cannot load a package before it has been transferred through `deployBinding`.
 
-Create the action payload for `new-binding` from the sender-side package:
+Create the action payload for `new-tcp-binding` from the sender-side package:
 
 ```bash
-BINDING_DIR="my_bindings/new-binding" \
+BINDING_DIR="my_bindings/new-tcp-binding" \
 node -e '
 const fs = require("fs");
 const path = require("path");
@@ -180,7 +179,7 @@ const basePath = process.env.BINDING_DIR;
 const manifest = JSON.parse(fs.readFileSync(path.join(basePath, "manifest.json"), "utf8"));
 const source = fs.readFileSync(path.join(basePath, "index.js"), "utf8");
 process.stdout.write(JSON.stringify({ manifest, source }));
-' > /tmp/new-binding-deployment.json
+' > /tmp/new-tcp-binding-deployment.json
 ```
 
 Check the external package against the current runtime before deployment:
@@ -188,14 +187,14 @@ Check the external package against the current runtime before deployment:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/new-binding-deployment.json
+  --data-binary @/tmp/new-tcp-binding-deployment.json
 ```
 
 Expected result:
 
 ```json
 {
-  "id": "new-binding",
+  "id": "new-tcp-binding",
   "compatible": true,
   "missingRequirements": [],
   "conflicts": []
@@ -209,7 +208,7 @@ Transfer and activate the binding through the Runtime Thing:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deployBinding \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/new-binding-deployment.json
+  --data-binary @/tmp/new-tcp-binding-deployment.json
 ```
 
 Expected result:
@@ -217,7 +216,7 @@ Expected result:
 ```json
 {
   "result": true,
-  "message": "Binding 'new-binding' deployed and activated with schemes new."
+  "message": "Binding 'new-tcp-binding' deployed and activated with schemes new."
 }
 ```
 
@@ -238,7 +237,7 @@ Remove the binding from the Servient:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
+  --data '{"id":"new-tcp-binding"}'
 ```
 
 The files remain in the deployment store and the binding is now `stored`. Inspect the lifecycle state:
@@ -252,7 +251,7 @@ Expected entry:
 ```json
 [
   {
-    "id": "new-binding",
+    "id": "new-tcp-binding",
     "state": "stored"
   }
 ]
@@ -263,7 +262,7 @@ Activate the stored binding again:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/addBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
+  --data '{"id":"new-tcp-binding"}'
 ```
 
 Delete the active binding and its runtime-side files:
@@ -271,7 +270,7 @@ Delete the active binding and its runtime-side files:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/deleteBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
+  --data '{"id":"new-tcp-binding"}'
 ```
 
 `deleteBinding` operates exclusively on `my_runtime/deployed-bindings`. If the binding is `active`, the action first stops and unregisters its dynamic Server and ClientFactory and then deletes the files. If it is already `stored`, only the files are deleted. In both cases, the resulting state is `not deployed`. Deleting the runtime-side copy does not modify the original package under `my_bindings` on the sender side.
@@ -298,37 +297,37 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   --data '{"id":"coap-binding"}'
 ```
 
-### 7.2 Simple Binding
+### 7.2 HTTP Binding
 
 Sender-side package:
 
 ```text
-my_bindings/simple-binding
+my_bindings/http-binding
 ```
 
-This binding provides a small custom client/server pair for the `simple` scheme. The server listens on `8091/tcp`.
+This binding loads the existing node-wot `HttpServer` implementation and exposes the Runtime Thing through an additional HTTP server on `8091/tcp`. It mirrors the structure of `coap-binding`: both dynamically add a server from an available node-wot protocol stack.
 
-Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/simple-binding"`.
+Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/http-binding"`.
 
 Remove:
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"simple-binding"}'
+  --data '{"id":"http-binding"}'
 ```
 
-### 7.3 New Raw TCP Binding
+### 7.3 New TCP Binding
 
 Sender-side package:
 
 ```text
-my_bindings/new-binding
+my_bindings/new-tcp-binding
 ```
 
 This binding provides a custom `new` scheme over a minimal JSON-line protocol on a TCP stream socket. The server listens on `8092/tcp`. It is the binding used by the presentation scenario when the replacement meter no longer speaks CoAP.
 
-Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/new-binding"`.
+Deploy the package using the procedure from [6.1](#61-deploy-a-binding-through-wot) with `BINDING_DIR="my_bindings/new-tcp-binding"`.
 
 After a successful deployment, read the Runtime Thing's `status` property through the dynamically loaded Raw TCP Binding:
 
@@ -380,19 +379,19 @@ Remove:
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
   -H "Content-Type: application/json" \
-  --data '{"id":"new-binding"}'
+  --data '{"id":"new-tcp-binding"}'
 ```
 
 ## 8. Negative Tests
 
 ### 8.1 Already Active Binding
 
-If `new-binding` is already active, checking the sender-side package again reports conflicts such as the registered `new` scheme and the occupied port `8092`.
+If `new-tcp-binding` is already active, checking the sender-side package again reports conflicts such as the registered `new` scheme and the occupied port `8092`.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/new-binding-deployment.json
+  --data-binary @/tmp/new-tcp-binding-deployment.json
 ```
 
 ### 8.2 Missing Runtime Interface
