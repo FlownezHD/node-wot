@@ -70,8 +70,6 @@ type DownwardInterfaceType =
     | "datagram-socket"
     | "protocol-stack";
 
-type InterfaceDirection = BindingRole | "client-server";
-
 type DownwardInterfaceOperation =
     | "listen"
     | "accept"
@@ -85,7 +83,7 @@ type DownwardInterfaceOperation =
 
 type DownwardInterfaceRequirement = {
     type: DownwardInterfaceType;
-    direction: InterfaceDirection;
+    direction: BindingRole;
     protocol?: string;
     operations?: DownwardInterfaceOperation[];
 };
@@ -155,7 +153,7 @@ type RuntimeSupportedBindings = {
 type RuntimeDownwardInterface = {
     id: string;
     type: DownwardInterfaceType;
-    direction: InterfaceDirection[];
+    direction: BindingRole[];
     protocol?: string;
     operations?: DownwardInterfaceOperation[];
 };
@@ -186,7 +184,6 @@ const validDownwardInterfaceTypes: DownwardInterfaceType[] = [
     "datagram-socket",
     "protocol-stack",
 ];
-const validInterfaceDirections: InterfaceDirection[] = ["client", "server", "client-server"];
 const validStreamSocketOperations: DownwardInterfaceOperation[] = ["listen", "accept", "connect", "send", "receive", "close"];
 const validDatagramSocketOperations: DownwardInterfaceOperation[] = ["bind", "sendDatagram", "receiveDatagram", "close"];
 const bindingIdPattern = /^[a-z0-9][a-z0-9-]*$/;
@@ -383,8 +380,8 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
             throw new Error(`Binding '${manifest.id}' interface requirement ${index} type is not supported.`);
         }
 
-        if (!validInterfaceDirections.includes(requirement.direction)) {
-            throw new Error(`Binding '${manifest.id}' interface requirement ${index} direction must be client, server or client-server.`);
+        if (!validBindingRoles.includes(requirement.direction)) {
+            throw new Error(`Binding '${manifest.id}' interface requirement ${index} direction must be client or server.`);
         }
 
         if (requirement.protocol != null && typeof requirement.protocol !== "string") {
@@ -414,15 +411,7 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
     });
 }
 
-function supportsDirection(runtimeDirections: InterfaceDirection[], requiredDirection: InterfaceDirection): boolean {
-    if (runtimeDirections.includes("client-server")) {
-        return true;
-    }
-
-    if (requiredDirection === "client-server") {
-        return runtimeDirections.includes("client") && runtimeDirections.includes("server");
-    }
-
+function supportsDirection(runtimeDirections: BindingRole[], requiredDirection: BindingRole): boolean {
     return runtimeDirections.includes(requiredDirection);
 }
 
