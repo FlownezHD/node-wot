@@ -211,18 +211,13 @@ const manifest = {
         roles: ["client"],
         interactions: ["readThingDescription"]
     },
-    requires: {
-        interfaces: [
-            {
-                type: "stream-socket",
-                direction: "client",
-                operations: ["connect", "close"]
-            }
-        ],
-        resources: {
-            ports: []
+    requires: [
+        {
+            type: "stream-socket",
+            direction: "client",
+            operations: ["connect", "close"]
         }
-    }
+    ]
 };
 
 let source = `"use strict";
@@ -248,15 +243,15 @@ if (scenario === "empty-source") {
 } else if (scenario === "invalid-id") {
     manifest.id = "../invalid-binding";
 } else if (scenario === "invalid-interface") {
-    manifest.requires.interfaces[0].type = "invalid-interface";
+    manifest.requires[0].type = "invalid-interface";
+} else if (scenario === "legacy-requires-wrapper") {
+    manifest.requires = { interfaces: manifest.requires };
 } else if (scenario === "invalid-entrypoint") {
     manifest.entrypoint = "../index.js";
 } else if (scenario === "missing-interface") {
-    manifest.requires.interfaces = [{ type: "protocol-stack", protocol: "amqp", direction: "client" }];
+    manifest.requires = [{ type: "protocol-stack", protocol: "amqp", direction: "client" }];
 } else if (scenario === "scheme-conflict") {
     manifest.provides.schemes = ["http"];
-} else if (scenario === "port-conflict") {
-    manifest.requires.resources.ports = [{ transport: "tcp", preferred: 8091, required: true, exclusive: true }];
 } else if (scenario === "syntax-error") {
     source = "module.exports = {";
 } else if (scenario === "missing-export") {
@@ -427,9 +422,9 @@ cleanup_deployed_binding missing-interface-binding
 cleanup_deployed_binding manifest-string-binding
 cleanup_deployed_binding empty-source-binding
 cleanup_deployed_binding invalid-interface-binding
+cleanup_deployed_binding legacy-requires-wrapper-binding
 cleanup_deployed_binding invalid-entrypoint-binding
 cleanup_deployed_binding scheme-conflict-binding
-cleanup_deployed_binding port-conflict-binding
 cleanup_deployed_binding syntax-error-binding
 cleanup_deployed_binding missing-export-binding
 cleanup_deployed_binding id-mismatch-binding
@@ -659,6 +654,12 @@ test_rejected_deployment \
     "unsupported interface type"
 
 test_rejected_deployment \
+    legacy-requires-wrapper \
+    legacy-requires-wrapper-binding \
+    'data.result === false && data.message.includes("requires must be an array")' \
+    "legacy requires.interfaces wrapper"
+
+test_rejected_deployment \
     invalid-entrypoint \
     invalid-entrypoint-binding \
     'data.result === false && data.message.includes("must use index.js")' \
@@ -687,12 +688,6 @@ test_rejected_deployment \
     scheme-conflict-binding \
     'data.result === false && data.conflicts.some((item) => item.includes("Scheme") && item.includes("http"))' \
     "conflicting URI scheme"
-
-test_rejected_deployment \
-    port-conflict \
-    port-conflict-binding \
-    'data.result === false && data.conflicts.some((item) => item.includes("Port 8091"))' \
-    "conflicting required port"
 
 section "Negative Module Loading and Rollback"
 test_rejected_deployment \
@@ -741,9 +736,9 @@ cleanup_deployed_binding missing-interface-binding
 cleanup_deployed_binding manifest-string-binding
 cleanup_deployed_binding empty-source-binding
 cleanup_deployed_binding invalid-interface-binding
+cleanup_deployed_binding legacy-requires-wrapper-binding
 cleanup_deployed_binding invalid-entrypoint-binding
 cleanup_deployed_binding scheme-conflict-binding
-cleanup_deployed_binding port-conflict-binding
 cleanup_deployed_binding syntax-error-binding
 cleanup_deployed_binding missing-export-binding
 cleanup_deployed_binding id-mismatch-binding

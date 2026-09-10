@@ -9,23 +9,11 @@
         "roles": ["server"],
         "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
     },
-    "requires": {
-        "interfaces": [
-            {
-                "type": "protocol-stack",
-                "protocol": "coap",
-                "direction": "server"
-            }
-        ],
-        "resources": {
-            "ports": [
-                {
-                    "transport": "udp",
-                    "preferred": 5684,
-                    "required": true,
-                    "exclusive": true
-                }
-            ]
+    "requires": [
+        {
+            "type": "protocol-stack",
+            "protocol": "coap",
+            "direction": "server"
         }
-    }
+    ]
 }

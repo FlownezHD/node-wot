@@ -70,8 +70,6 @@ type DownwardInterfaceType =
     | "datagram-socket"
     | "protocol-stack";
 
-type TransportType = "tcp" | "udp";
-
 type InterfaceDirection = BindingRole | "client-server";
 
 type DownwardInterfaceOperation =
@@ -92,27 +90,13 @@ type DownwardInterfaceRequirement = {
     operations?: DownwardInterfaceOperation[];
 };
 
-type PortRequirement = {
-    transport?: TransportType;
-    preferred?: number;
-    required?: boolean;
-    exclusive?: boolean;
-};
-
-type BindingResourceRequirements = {
-    ports?: PortRequirement[];
-};
-
 type BindingProvidedCapabilities = {
     schemes: string[];
     roles: BindingRole[];
     interactions: WoTInteraction[];
 };
 
-type BindingRequirements = {
-    interfaces: DownwardInterfaceRequirement[];
-    resources?: BindingResourceRequirements;
-};
+type BindingRequirements = DownwardInterfaceRequirement[];
 
 //Runtime Manifest
 type RuntimeBindingManifest = {
@@ -179,10 +163,6 @@ type RuntimeDownwardInterface = {
 type RuntimeCapabilities = {
     interfaces: RuntimeDownwardInterface[];
     supportedBindings?: RuntimeSupportedBindings;
-    resourceManagement: {
-        portCheck: boolean;
-        exclusivePortCheck: boolean;
-    };
 };
 
 type CompatibilityResult = {
@@ -191,7 +171,6 @@ type CompatibilityResult = {
     conflicts: string[];
 };
 
-const validTransportTypes: TransportType[] = ["tcp", "udp"];
 const validBindingRoles: BindingRole[] = ["client", "server"];
 const validWoTInteractions: WoTInteraction[] = [
     "readThingDescription",
@@ -232,10 +211,6 @@ const baseRuntimeCapabilities: RuntimeCapabilities = {
             operations: validDatagramSocketOperations,
         },
     ],
-    resourceManagement: {
-        portCheck: true,
-        exclusivePortCheck: true,
-    },
 };
 
 //return the running Servient from WoT
@@ -399,15 +374,11 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
         }
     });
 
-    if (manifest.requires == null || typeof manifest.requires !== "object") {
-        throw new Error(`Binding '${manifest.id}' manifest must define requires.`);
+    if (!Array.isArray(manifest.requires)) {
+        throw new Error(`Binding '${manifest.id}' manifest requires must be an array.`);
     }
 
-    if (!Array.isArray(manifest.requires?.interfaces)) {
-        throw new Error(`Binding '${manifest.id}' manifest requires.interfaces must be an array.`);
-    }
-
-    manifest.requires.interfaces.forEach((requirement, index) => {
+    manifest.requires.forEach((requirement, index) => {
         if (!validDownwardInterfaceTypes.includes(requirement?.type)) {
             throw new Error(`Binding '${manifest.id}' interface requirement ${index} type is not supported.`);
         }
@@ -439,28 +410,6 @@ function validateBindingManifest(manifest: RuntimeBindingManifest): void {
                     );
                 }
             });
-        }
-    });
-
-    if (manifest.requires.resources?.ports != null && !Array.isArray(manifest.requires.resources.ports)) {
-        throw new Error(`Binding '${manifest.id}' manifest requires.resources.ports must be an array.`);
-    }
-
-    manifest.requires.resources?.ports?.forEach((portRequirement, index) => {
-        if (portRequirement.transport != null && !validTransportTypes.includes(portRequirement.transport)) {
-            throw new Error(`Binding '${manifest.id}' port requirement ${index} transport must be tcp or udp.`);
-        }
-
-        if (portRequirement.preferred != null && typeof portRequirement.preferred !== "number") {
-            throw new Error(`Binding '${manifest.id}' port requirement ${index} preferred must be a number.`);
-        }
-
-        if (portRequirement.required != null && typeof portRequirement.required !== "boolean") {
-            throw new Error(`Binding '${manifest.id}' port requirement ${index} required must be a boolean.`);
-        }
-
-        if (portRequirement.exclusive != null && typeof portRequirement.exclusive !== "boolean") {
-            throw new Error(`Binding '${manifest.id}' port requirement ${index} exclusive must be a boolean.`);
         }
     });
 }
@@ -515,38 +464,15 @@ function describeRequirement(requirement: DownwardInterfaceRequirement): string 
         .join(" ");
 }
 
-type UsedPort = {
-    port: number;
-    transport?: TransportType;
-};
-
-function getCurrentRuntimeState(): { usedPorts: UsedPort[]; registeredSchemes: string[] } {
-    const usedPorts = new Map<string, UsedPort>();
+function getCurrentRuntimeState(): { registeredSchemes: string[] } {
     const registeredSchemes = new Set<string>();
 
     loadedBindings.forEach((loadedBinding) => {
         loadedBinding.binding.provides.schemes.forEach((scheme) => registeredSchemes.add(scheme));
         loadedBinding.clientSchemes.forEach((scheme) => registeredSchemes.add(scheme));
-
-        loadedBinding.binding.requires.resources?.ports?.forEach((portRequirement) => {
-            if (typeof portRequirement.preferred === "number") {
-                const key = `${portRequirement.transport ?? "any"}:${portRequirement.preferred}`;
-                usedPorts.set(key, {
-                    port: portRequirement.preferred,
-                    transport: portRequirement.transport,
-                });
-            }
-        });
-
-        const port = loadedBinding.server?.getPort();
-        if (typeof port === "number" && port > 0) {
-            const key = `any:${port}`;
-            usedPorts.set(key, { port });
-        }
     });
 
     return {
-        usedPorts: [...usedPorts.values()],
         registeredSchemes: [...registeredSchemes],
     };
 }
@@ -648,14 +574,13 @@ function checkBindingCompatibility(
     manifest: RuntimeBindingManifest,
     capabilities: RuntimeCapabilities,
     currentState: {
-        usedPorts: UsedPort[];
         registeredSchemes: string[];
     }
 ): CompatibilityResult {
     const missingRequirements: string[] = [];
     const conflicts: string[] = [];
 
-    for (const requirement of manifest.requires.interfaces) {
+    for (const requirement of manifest.requires) {
         const matchingInterface = capabilities.interfaces.find((runtimeInterface) => {
             if (runtimeInterface.type !== requirement.type) {
                 return false;
@@ -674,32 +599,6 @@ function checkBindingCompatibility(
 
         if (matchingInterface == null) {
             missingRequirements.push(`No runtime interface found for ${describeRequirement(requirement)}.`);
-        }
-    }
-
-    for (const portRequirement of manifest.requires.resources?.ports ?? []) {
-        const shouldCheckPort =
-            capabilities.resourceManagement.portCheck === true &&
-            portRequirement.preferred != null &&
-            (portRequirement.required === true ||
-                (capabilities.resourceManagement.exclusivePortCheck === true && portRequirement.exclusive === true));
-
-        if (!shouldCheckPort) {
-            continue;
-        }
-
-        const portIsUsed = currentState.usedPorts.some((usedPort) => {
-            const samePort = usedPort.port === portRequirement.preferred;
-            const sameTransport =
-                usedPort.transport == null ||
-                portRequirement.transport == null ||
-                usedPort.transport === portRequirement.transport;
-
-            return samePort && sameTransport;
-        });
-
-        if (portIsUsed) {
-            conflicts.push(`Port ${portRequirement.preferred} is already in use`);
         }
     }
 
@@ -948,7 +847,10 @@ async function main() {
                             type: "object",
                         },
                         requires: {
-                            type: "object",
+                            type: "array",
+                            items: {
+                                type: "object",
+                            },
                         },
                     },
                 },

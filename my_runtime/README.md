@@ -130,35 +130,23 @@ Each package below `my_bindings/<binding-id>` contains a `manifest.json` and an 
 `requires` describes what the host runtime or platform must provide:
 
 ```json
-{
-  "interfaces": [
-    {
-      "type": "stream-socket",
-      "direction": "server",
-      "operations": ["listen", "accept", "send", "receive", "close"]
-    },
-    {
-      "type": "stream-socket",
-      "direction": "client",
-      "operations": ["connect", "send", "receive", "close"]
-    }
-  ],
-  "resources": {
-    "ports": [
-      {
-        "transport": "tcp",
-        "preferred": 8092,
-        "required": true,
-        "exclusive": true
-      }
-    ]
+[
+  {
+    "type": "stream-socket",
+    "direction": "server",
+    "operations": ["listen", "accept", "send", "receive", "close"]
+  },
+  {
+    "type": "stream-socket",
+    "direction": "client",
+    "operations": ["connect", "send", "receive", "close"]
   }
-}
+]
 ```
 
-The operations specify which abstract stream-socket capabilities the `new-tcp-binding` requires for its server and client roles.
+`requires` is a direct array because a binding can depend on more than one downward interface. The operations specify which abstract stream-socket capabilities the `new-tcp-binding` requires for its server and client roles. Concrete listening ports remain implementation and runtime configuration details rather than compatibility requirements in this proof of concept.
 
-Before activating a binding, the runtime validates the manifest and checks whether all requirements are compatible with the current runtime capabilities and resource state.
+Before activating a binding, the runtime validates the manifest and checks whether all requirements are compatible with the current runtime capabilities and whether a provided scheme conflicts with an active dynamic binding.
 
 ## 6. Management Flow
 
@@ -386,7 +374,7 @@ curl -i -X POST http://localhost:8080/runtime/actions/removeBinding \
 
 ### 8.1 Already Active Binding
 
-If `new-tcp-binding` is already active, checking the sender-side package again reports conflicts such as the registered `new` scheme and the occupied port `8092`.
+If `new-tcp-binding` is already active, checking the sender-side package again reports the registered `new` scheme as a conflict.
 
 ```bash
 curl -i -X POST http://localhost:8080/runtime/actions/checkBindingCompatibility \
@@ -410,18 +398,13 @@ A binding manifest with an unavailable interface produces a missing requirement.
     "roles": ["client"],
     "interactions": ["readThingDescription"]
   },
-  "requires": {
-    "interfaces": [
-      {
-        "type": "protocol-stack",
-        "protocol": "amqp",
-        "direction": "client"
-      }
-    ],
-    "resources": {
-      "ports": []
+  "requires": [
+    {
+      "type": "protocol-stack",
+      "protocol": "amqp",
+      "direction": "client"
     }
-  }
+  ]
 }
 ```
 

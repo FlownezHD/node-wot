@@ -9,23 +9,11 @@
         "roles": ["server"],
         "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
     },
-    "requires": {
-        "interfaces": [
-            {
-                "type": "protocol-stack",
-                "protocol": "http",
-                "direction": "server"
-            }
-        ],
-        "resources": {
-            "ports": [
-                {
-                    "transport": "tcp",
-                    "preferred": 8091,
-                    "required": true,
-                    "exclusive": true
-                }
-            ]
+    "requires": [
+        {
+            "type": "protocol-stack",
+            "protocol": "http",
+            "direction": "server"
         }
-    }
+    ]
 }

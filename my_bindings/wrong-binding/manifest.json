@@ -9,16 +9,11 @@
         "roles": ["client"],
         "interactions": ["readThingDescription", "readProperty"]
     },
-    "requires": {
-        "interfaces": [
-            {
-                "type": "protocol-stack",
-                "protocol": "http",
-                "direction": "client"
-            }
-        ],
-        "resources": {
-            "ports": []
+    "requires": [
+        {
+            "type": "protocol-stack",
+            "protocol": "http",
+            "direction": "client"
         }
-    }
+    ]
 }

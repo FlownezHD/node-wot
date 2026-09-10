@@ -9,28 +9,16 @@
         "roles": ["client", "server"],
         "interactions": ["readThingDescription", "readProperty", "writeProperty", "invokeAction"]
     },
-    "requires": {
-        "interfaces": [
-            {
-                "type": "stream-socket",
-                "direction": "server",
-                "operations": ["listen", "accept", "send", "receive", "close"]
-            },
-            {
-                "type": "stream-socket",
-                "direction": "client",
-                "operations": ["connect", "send", "receive", "close"]
-            }
-        ],
-        "resources": {
-            "ports": [
-                {
-                    "transport": "tcp",
-                    "preferred": 8092,
-                    "required": true,
-                    "exclusive": true
-                }
-            ]
+    "requires": [
+        {
+            "type": "stream-socket",
+            "direction": "server",
+            "operations": ["listen", "accept", "send", "receive", "close"]
+        },
+        {
+            "type": "stream-socket",
+            "direction": "client",
+            "operations": ["connect", "send", "receive", "close"]
         }
-    }
+    ]
 }
