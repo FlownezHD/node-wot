@@ -40,9 +40,12 @@ export default class Servient {
     #wotInstance?: typeof WoT;
     #shutdown = false;
 
-    /** add a new codec to support a mediatype; offered mediatypes are listed in TDs */
-    public addMediaType(codec: ContentCodec, offered = false): void {
-        ContentManager.addCodec(codec, offered);
+    /**
+     * add a new codec to support a mediatype; offered mediatypes are listed in TDs.
+     * With a scheme, the codec applies only to forms using that URI scheme.
+     */
+    public addMediaType(codec: ContentCodec, offered = false, scheme?: string): void {
+        ContentManager.addCodec(codec, offered, scheme);
     }
 
     public expose(thing: ExposedThing): Promise<void> {
